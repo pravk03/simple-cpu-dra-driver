@@ -65,39 +65,37 @@ func Start(ctx context.Context, driverName string, kubeClient kubernetes.Interfa
 		return nil, err
 	}
 
-	/*
-			// register the NRI plugin
-			nriOpts := []stub.Option{
-				stub.WithPluginName(driverName),
-				stub.WithPluginIdx("00"),
-				// https://github.com/containerd/nri/pull/173
-				// Otherwise it silently exits the program
-				stub.WithOnClose(func() {
-					klog.Infof("%s NRI plugin closed", driverName)
-				}),
-			}
-			stub, err := stub.New(plugin, nriOpts...)
-			if err != nil {
-				return nil, fmt.Errorf("failed to create plugin stub: %v", err)
-			}
-			plugin.nriPlugin = stub
+	// register the NRI plugin
+	nriOpts := []stub.Option{
+		stub.WithPluginName(driverName),
+		stub.WithPluginIdx("00"),
+		// https://github.com/containerd/nri/pull/173
+		// Otherwise it silently exits the program
+		stub.WithOnClose(func() {
+			klog.Infof("%s NRI plugin closed", driverName)
+		}),
+	}
+	stub, err := stub.New(plugin, nriOpts...)
+	if err != nil {
+		return nil, fmt.Errorf("failed to create plugin stub: %v", err)
+	}
+	plugin.nriPlugin = stub
 
-		go func() {
-			for i := 0; i < maxAttempts; i++ {
-				err = plugin.nriPlugin.Run(ctx)
-				if err != nil {
-					klog.Infof("NRI plugin failed with error %v", err)
-				}
-				select {
-				case <-ctx.Done():
-					return
-				default:
-					klog.Infof("Restarting NRI plugin %d out of %d", i, maxAttempts)
-				}
+	go func() {
+		for i := 0; i < maxAttempts; i++ {
+			err = plugin.nriPlugin.Run(ctx)
+			if err != nil {
+				klog.Infof("NRI plugin failed with error %v", err)
 			}
-			klog.Fatalf("NRI plugin failed for %d times to be restarted", maxAttempts)
-		}()
-	*/
+			select {
+			case <-ctx.Done():
+				return
+			default:
+				klog.Infof("Restarting NRI plugin %d out of %d", i, maxAttempts)
+			}
+		}
+		klog.Fatalf("NRI plugin failed for %d times to be restarted", maxAttempts)
+	}()
 
 	// publish available resources
 	go plugin.PublishResources(ctx)
