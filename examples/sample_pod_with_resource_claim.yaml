@@ -1,0 +1,22 @@
+apiVersion: v1
+kind: Pod
+metadata:
+  name: my-app-with-dra-cpu
+spec:
+  containers:
+    - name: my-app
+      image: "nginx:latest"
+      resources:
+        # Standard requests and limits that MUST match the claim for schedulability.
+        # This ensures the kubelet allocates the correct CPU share.
+        requests:
+          cpu: "4"
+        limits:
+          cpu: "4"
+        # This section references the DRA ResourceClaim
+        claims:
+          - name: "req-dummy" # This name must match a request name in the claim
+  # This section links the pod to the specific ResourceClaim object
+  resourceClaims:
+    - name: "req-dummy" # This name must match the name in spec.containers.resources.claims
+      resourceClaimName: dummy-cpu-request # This must match the ResourceClaim's metadata.name

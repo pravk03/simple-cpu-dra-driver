@@ -64,7 +64,7 @@ func createCPUDevices() []resourceapi.Device {
 }
 
 func (cp *CPUDriver) PublishResources(ctx context.Context) {
-	klog.V(2).Infof("Publishing resources")
+	klog.Infof("Publishing resources")
 
 	cpuDevices := createCPUDevices()
 	resources := resourceslice.DriverResources{
@@ -79,15 +79,17 @@ func (cp *CPUDriver) PublishResources(ctx context.Context) {
 }
 
 func (cp *CPUDriver) PrepareResourceClaims(ctx context.Context, claims []*resourceapi.ResourceClaim) (map[types.UID]kubeletplugin.PrepareResult, error) {
-	klog.V(2).Infof("PrepareResourceClaims is called: number of claims: %d", len(claims))
+	klog.Infof("PrepareResourceClaims is called: number of claims: %d", len(claims))
 
 	if len(claims) == 0 {
 		return nil, nil
 	}
+
 	result := make(map[types.UID]kubeletplugin.PrepareResult)
 
 	for _, claim := range claims {
 		klog.V(2).Infof("NodePrepareResources: Claim Request %s/%s", claim.Namespace, claim.Name)
+		klog.Infof("PrepareResourceClaims claim:%+v", claim)
 		result[claim.UID] = cp.prepareResourceClaim(ctx, claim)
 	}
 	return result, nil
@@ -99,13 +101,14 @@ func (cp *CPUDriver) prepareResourceClaim(ctx context.Context, claim *resourceap
 }
 
 func (np *CPUDriver) UnprepareResourceClaims(ctx context.Context, claims []kubeletplugin.NamespacedObject) (map[types.UID]error, error) {
-	klog.V(2).Infof("UnprepareResourceClaims is called: number of claims: %d", len(claims))
+	klog.Infof("UnprepareResourceClaims is called: number of claims: %d", len(claims))
 	if len(claims) == 0 {
 		return nil, nil
 	}
 
 	result := make(map[types.UID]error)
 	for _, claim := range claims {
+		klog.Infof("UnprepareResourceClaims claim:%+v", claim)
 		err := np.unprepareResourceClaim(ctx, claim)
 		result[claim.UID] = err
 		if err != nil {
