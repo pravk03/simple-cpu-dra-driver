@@ -18,8 +18,12 @@ package driver
 
 import (
 	"context"
+	"encoding/json"
+	"strings"
 
 	"github.com/containerd/nri/pkg/api"
+	v1 "k8s.io/api/core/v1"
+	"k8s.io/apimachinery/pkg/types"
 
 	"k8s.io/klog/v2"
 )
@@ -37,9 +41,44 @@ func (cp *CPUDriver) Synchronize(_ context.Context, pods []*api.PodSandbox, cont
 
 // CreateContainer handles container creation requests.
 func (cp *CPUDriver) CreateContainer(_ context.Context, pod *api.PodSandbox, ctr *api.Container) (*api.ContainerAdjustment, []*api.ContainerUpdate, error) {
-	klog.Infof("CreateContainer Pod %s/%s UID %s Container %s", pod.Namespace, pod.Name, pod.Uid, ctr.Name)
-	// Containers only cares about the RDMA char devices
+	klog.Infof("CreateContainer Pod:%s/%s PodUID:%s Container:%s ContainerID:%s", pod.Namespace, pod.Name, pod.Uid, ctr.Name, ctr.Id)
+
 	adjust := &api.ContainerAdjustment{}
+
+	// This is a HACK: There is no way to map a Resource claim to a contianer in the dra hook.
+	// The claim.Status.ReservedFor conly contains the podUID.
+	// There is no direct way to get the claim or the claim request from the PodSandbox or Container objects in the NRI hook.
+	for name, value := range pod.Annotations {
+		if name == "kubectl.kubernetes.io/last-applied-configuration" {
+			klog.Infof("Pod Annotation %s: %s", name, value)
+			var podSpec v1.Pod
+			err := json.Unmarshal([]byte(value), &podSpec)
+			if err == nil {
+				// klog.Infof("Pod Annotation Json:%v", podSpec)
+				for _, podContainer := range podSpec.Spec.Containers {
+					klog.Infof("Pod Container %s", podContainer.Name)
+					if podContainer.Name == ctr.Name {
+						klog.Infof("Pod Container %s matches CreateContainer", podContainer.Name)
+						for _, claim := range podContainer.Resources.Claims {
+							klog.Infof("Pod Container %s Claim: %+v", podContainer.Name, claim.Name)
+							cpuIDs, found := cp.podConfigStore.GetClaimRequestCPUs(types.UID(pod.Uid), claim.Name)
+							klog.Infof("Pod Container %s Claim: %v found:%v cpuIDs:%v", podContainer.Name, claim.Name, found, cpuIDs)
+							adjust.Linux = &api.LinuxContainerAdjustment{
+								Resources: &api.LinuxResources{
+									Cpu: &api.LinuxCPU{
+										Cpus: strings.Join(cpuIDs, ","),
+									},
+								},
+							}
+							klog.Infof("Pod Container %s adjust:%+v", podContainer.Name, adjust)
+						}
+					}
+				}
+			} else {
+				klog.Errorf("Error unmarshalling pod annotation %s: %v", name, err)
+			}
+		}
+	}
 	return adjust, nil, nil
 }
 

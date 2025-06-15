@@ -22,11 +22,12 @@ const (
 )
 
 type CPUDriver struct {
-	driverName string
-	nodeName   string
-	kubeClient kubernetes.Interface
-	draPlugin  *kubeletplugin.Helper
-	nriPlugin  stub.Stub
+	driverName     string
+	nodeName       string
+	kubeClient     kubernetes.Interface
+	draPlugin      *kubeletplugin.Helper
+	nriPlugin      stub.Stub
+	podConfigStore *PodConfigStore
 }
 
 type Option func(*CPUDriver)
@@ -34,9 +35,10 @@ type Option func(*CPUDriver)
 func Start(ctx context.Context, driverName string, kubeClient kubernetes.Interface, nodeName string) (*CPUDriver, error) {
 
 	plugin := &CPUDriver{
-		driverName: driverName,
-		nodeName:   nodeName,
-		kubeClient: kubeClient,
+		driverName:     driverName,
+		nodeName:       nodeName,
+		kubeClient:     kubeClient,
+		podConfigStore: NewPodConfigStore(),
 	}
 
 	driverPluginPath := filepath.Join(kubeletPluginPath, driverName)

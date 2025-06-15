@@ -5,18 +5,25 @@ metadata:
 spec:
   containers:
     - name: my-app
-      image: "nginx:latest"
+      image: "registry.k8s.io/pause:3.9"
       resources:
-        # Standard requests and limits that MUST match the claim for schedulability.
-        # This ensures the kubelet allocates the correct CPU share.
         requests:
           cpu: "4"
         limits:
           cpu: "4"
-        # This section references the DRA ResourceClaim
         claims:
-          - name: "req-dummy" # This name must match a request name in the claim
-  # This section links the pod to the specific ResourceClaim object
+          - name: "req-dummy"
+    - name: my-app-2
+      image: "registry.k8s.io/pause:3.9"
+      resources:
+        requests:
+          cpu: "6"
+        limits:
+          cpu: "6"
+        claims:
+          - name: "req-dummy-2"
   resourceClaims:
-    - name: "req-dummy" # This name must match the name in spec.containers.resources.claims
-      resourceClaimName: dummy-cpu-request # This must match the ResourceClaim's metadata.name
+    - name: "req-dummy"
+      resourceClaimName: dummy-cpu-request
+    - name: "req-dummy-2"
+      resourceClaimName: dummy-cpu-request-2
