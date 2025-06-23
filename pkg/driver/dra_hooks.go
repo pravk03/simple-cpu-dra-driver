@@ -30,10 +30,6 @@ import (
 	"k8s.io/klog/v2"
 )
 
-const (
-	rdmaCmPath = "/dev/infiniband/rdma_cm"
-)
-
 func createCPUDevices() []resourceapi.Device {
 
 	cpuInfo, err := cpuinfo.GetCPUInfos()
@@ -77,17 +73,16 @@ func (cp *CPUDriver) PublishResources(ctx context.Context) {
 	if err != nil {
 		klog.Errorf("error publishing resources: %v", err)
 	}
-	return
 }
 
 func (cp *CPUDriver) PrepareResourceClaims(ctx context.Context, claims []*resourceapi.ResourceClaim) (map[types.UID]kubeletplugin.PrepareResult, error) {
 	klog.Infof("PrepareResourceClaims is called: number of claims: %d", len(claims))
 
-	if len(claims) == 0 {
-		return nil, nil
-	}
-
 	result := make(map[types.UID]kubeletplugin.PrepareResult)
+
+	if len(claims) == 0 {
+		return result, nil
+	}
 
 	for _, claim := range claims {
 		klog.V(2).Infof("NodePrepareResources: Claim Request %s/%s", claim.Namespace, claim.Name)
@@ -105,11 +100,11 @@ func (cp *CPUDriver) PrepareResourceClaims(ctx context.Context, claims []*resour
 
 func (cp *CPUDriver) prepareResourceClaim(ctx context.Context, claim *resourceapi.ResourceClaim) kubeletplugin.PrepareResult {
 	klog.V(2).Infof("PrepareResourceClaim Claim %s/%s ID:%s", claim.Namespace, claim.Name, claim.UID)
-	//podUIDs := []types.UID{}
+	// podUIDs := []types.UID{}
 	podUIDs := []types.UID{}
 	for _, reserved := range claim.Status.ReservedFor {
 		klog.Infof("PrepareResourceClaim Pod %s UID:%v", reserved.Name, reserved.UID)
-		//podUIDs = append(podUIDs, reserved.UID)
+		// podUIDs = append(podUIDs, reserved.UID)
 		podUIDs = append(podUIDs, reserved.UID)
 	}
 
@@ -139,11 +134,13 @@ func (cp *CPUDriver) prepareResourceClaim(ctx context.Context, claim *resourceap
 
 func (np *CPUDriver) UnprepareResourceClaims(ctx context.Context, claims []kubeletplugin.NamespacedObject) (map[types.UID]error, error) {
 	klog.Infof("UnprepareResourceClaims is called: number of claims: %d", len(claims))
-	if len(claims) == 0 {
-		return nil, nil
-	}
 
 	result := make(map[types.UID]error)
+
+	if len(claims) == 0 {
+		return result, nil
+	}
+
 	for _, claim := range claims {
 		klog.Infof("UnprepareResourceClaims claim:%+v", claim)
 		err := np.unprepareResourceClaim(ctx, claim)
