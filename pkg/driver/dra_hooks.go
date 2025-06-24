@@ -30,10 +30,6 @@ import (
 	"k8s.io/klog/v2"
 )
 
-const (
-	rdmaCmPath = "/dev/infiniband/rdma_cm"
-)
-
 func createCPUDevices() []resourceapi.Device {
 
 	cpuInfo, err := cpuinfo.GetCPUInfos()
@@ -77,16 +73,17 @@ func (cp *CPUDriver) PublishResources(ctx context.Context) {
 	if err != nil {
 		klog.Errorf("error publishing resources: %v", err)
 	}
-	return
 }
 
 func (cp *CPUDriver) PrepareResourceClaims(ctx context.Context, claims []*resourceapi.ResourceClaim) (map[types.UID]kubeletplugin.PrepareResult, error) {
 	klog.Infof("PrepareResourceClaims is called: number of claims: %d", len(claims))
 
-	if len(claims) == 0 {
-		return nil, nil
-	}
 	result := make(map[types.UID]kubeletplugin.PrepareResult)
+
+	if len(claims) == 0 {
+		return result, nil
+	}
+
 	for _, claim := range claims {
 		result[claim.UID] = cp.prepareResourceClaim(ctx, claim)
 	}
@@ -147,11 +144,13 @@ func (cp *CPUDriver) prepareResourceClaim(ctx context.Context, claim *resourceap
 
 func (np *CPUDriver) UnprepareResourceClaims(ctx context.Context, claims []kubeletplugin.NamespacedObject) (map[types.UID]error, error) {
 	klog.Infof("UnprepareResourceClaims is called: number of claims: %d", len(claims))
-	if len(claims) == 0 {
-		return nil, nil
-	}
 
 	result := make(map[types.UID]error)
+
+	if len(claims) == 0 {
+		return result, nil
+	}
+
 	for _, claim := range claims {
 		klog.Infof("UnprepareResourceClaims claim:%+v", claim)
 		err := np.unprepareResourceClaim(ctx, claim)
