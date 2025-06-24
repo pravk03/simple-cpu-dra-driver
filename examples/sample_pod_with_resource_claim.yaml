@@ -4,7 +4,7 @@ metadata:
   name: my-app-with-dra-cpu
 spec:
   containers:
-    - name: my-app
+    - name: container1
       image: "registry.k8s.io/pause:3.9"
       resources:
         requests:
@@ -12,8 +12,8 @@ spec:
         limits:
           cpu: "4"
         claims:
-          - name: "req-dummy"
-    - name: my-app-2
+          - name: "container1-claim"
+    - name: container2
       image: "registry.k8s.io/pause:3.9"
       resources:
         requests:
@@ -21,9 +21,9 @@ spec:
         limits:
           cpu: "6"
         claims:
-          - name: "req-dummy-2"
+          - name: "container2-claim"
   resourceClaims:
-    - name: "req-dummy"
+    - name: "container1-claim"
       resourceClaimName: dummy-cpu-request
-    - name: "req-dummy-2"
+    - name: "container2-claim"
       resourceClaimName: dummy-cpu-request-2

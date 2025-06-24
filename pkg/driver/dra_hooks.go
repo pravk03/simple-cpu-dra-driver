@@ -18,12 +18,12 @@ package driver
 
 import (
 	"context"
-	"encoding/json"
 	"fmt"
 	"strings"
 
 	"github.com/pravk03/topologyutil/pkg/cpuinfo"
 	resourceapi "k8s.io/api/resource/v1beta1"
+	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/types"
 	"k8s.io/dynamic-resource-allocation/kubeletplugin"
 	"k8s.io/dynamic-resource-allocation/resourceslice"
@@ -86,52 +86,60 @@ func (cp *CPUDriver) PrepareResourceClaims(ctx context.Context, claims []*resour
 	if len(claims) == 0 {
 		return nil, nil
 	}
-
 	result := make(map[types.UID]kubeletplugin.PrepareResult)
-
 	for _, claim := range claims {
-		klog.V(2).Infof("NodePrepareResources: Claim Request %s/%s", claim.Namespace, claim.Name)
-		// klog.Infof("PrepareResourceClaims claim:%+v", claim)
-		prettyJSON, err := json.MarshalIndent(claim, "", "  ")
-		if err != nil {
-			return nil, err
-		}
-		klog.Infof("PrepareResourceClaims claim:%v", string(prettyJSON))
-
 		result[claim.UID] = cp.prepareResourceClaim(ctx, claim)
 	}
 	return result, nil
 }
 
 func (cp *CPUDriver) prepareResourceClaim(ctx context.Context, claim *resourceapi.ResourceClaim) kubeletplugin.PrepareResult {
-	klog.V(2).Infof("PrepareResourceClaim Claim %s/%s ID:%s", claim.Namespace, claim.Name, claim.UID)
-	//podUIDs := []types.UID{}
-	podUIDs := []types.UID{}
-	for _, reserved := range claim.Status.ReservedFor {
-		klog.Infof("PrepareResourceClaim Pod %s UID:%v", reserved.Name, reserved.UID)
-		//podUIDs = append(podUIDs, reserved.UID)
-		podUIDs = append(podUIDs, reserved.UID)
-	}
+	claimNamespacedName := types.NamespacedName{Namespace: claim.Namespace, Name: claim.Name}
+	klog.V(2).Infof("PrepareResourceClaim for Claim %v", claimNamespacedName)
 
-	claimRequestCPUIDs := make(map[string][]string)
-	for _, deviceAlloc := range claim.Status.Allocation.Devices.Results {
-		if deviceAlloc.Driver == cp.driverName {
-			klog.Infof("PrepareResourceClaim device:%+v", deviceAlloc)
-			numericID := strings.TrimPrefix(deviceAlloc.Device, "cpu")
-			claimRequestCPUIDs[deviceAlloc.Request] = append(claimRequestCPUIDs[deviceAlloc.Request], numericID)
+	for _, reserved := range claim.Status.ReservedFor {
+		// Currently there is no way to map a resource claim to a contianer in the dra hook.
+		// The claim.Status.ReservedFor only contains the podUID.
+		// TODO(pravk03): Explore a way to map container to resource claim without making API request. We may need to use CDI here.
+		pod, err := cp.kubeClient.CoreV1().Pods(claim.Namespace).Get(ctx, reserved.Name, metav1.GetOptions{})
+		if err != nil {
+			klog.Errorf("Error getting pod %s/%s for claim %s: %v", claim.Namespace, reserved.Name, claim.Name, err)
+			continue
 		}
 
-	}
+		podResourceClaimNameMap := make(map[string]string)
+		for _, podClaim := range pod.Spec.ResourceClaims {
+			podResourceClaimNameMap[podClaim.Name] = *podClaim.ResourceClaimName
+		}
 
-	claimNamespacedName := types.NamespacedName{
-		Namespace: claim.Namespace,
-		Name:      claim.Name,
-	}
-	klog.Infof("PrepareResourceClaim claimNamespacedName:%+v", claimNamespacedName)
+		containersWithClaim := []string{}
+		for _, container := range pod.Spec.Containers {
+			for _, rClaim := range container.Resources.Claims {
+				if podResourceClaimNameMap[rClaim.Name] == claim.Name {
+					containersWithClaim = append(containersWithClaim, container.Name)
+				}
+			}
+		}
+		for _, initContainer := range pod.Spec.InitContainers {
+			for _, rClaim := range initContainer.Resources.Claims {
+				if podResourceClaimNameMap[rClaim.Name] == claim.Name {
+					containersWithClaim = append(containersWithClaim, initContainer.Name)
+				}
+			}
+		}
+		klog.Infof("prepareResourceClaim claim:%+v containersWithClaim:%+v", claimNamespacedName, containersWithClaim)
+		claimCPUIDs := []string{}
+		for _, deviceAlloc := range claim.Status.Allocation.Devices.Results {
+			if deviceAlloc.Driver != cp.driverName {
+				continue
+			}
+			numericID := strings.TrimPrefix(deviceAlloc.Device, "cpu")
+			claimCPUIDs = append(claimCPUIDs, numericID)
+		}
+		klog.Infof("prepareResourceClaim claim:%+v claimCPUIDs:%+v", claimNamespacedName, claimCPUIDs)
 
-	for _, uid := range podUIDs {
-		for request, cpuIDs := range claimRequestCPUIDs {
-			cp.podConfigStore.SetClaimRequestCPUs(uid, claimNamespacedName, request, cpuIDs)
+		for _, container := range containersWithClaim {
+			cp.podConfigStore.SetContainerCPUs(reserved.UID, container, claimNamespacedName, claimCPUIDs)
 		}
 	}
 	return kubeletplugin.PrepareResult{}
@@ -156,6 +164,6 @@ func (np *CPUDriver) UnprepareResourceClaims(ctx context.Context, claims []kubel
 }
 
 func (cp *CPUDriver) unprepareResourceClaim(_ context.Context, claim kubeletplugin.NamespacedObject) error {
-	cp.podConfigStore.DeleteClaimRequest(claim.NamespacedName)
+	cp.podConfigStore.DeleteClaim(claim.NamespacedName)
 	return nil
 }
