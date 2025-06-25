@@ -80,4 +80,4 @@ load-kind-image: image ## install on cluster
 	kubectl apply -f install.yaml
 
 delete-kind-cluster: ## delete kind cluster
-	kind create cluster --name dra
+	kind delete cluster --name dra
