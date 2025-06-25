@@ -78,3 +78,6 @@ load-kind-image: image ## install on cluster
 	kind load docker-image ghcr.io/google/dracpu:stable --name dra
 	kubectl delete -f install.yaml || true
 	kubectl apply -f install.yaml
+
+delete-kind-cluster: ## delete kind cluster
+	kind create cluster --name dra
