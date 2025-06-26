@@ -43,7 +43,7 @@ func Start(ctx context.Context, driverName string, kubeClient kubernetes.Interfa
 
 	driverPluginPath := filepath.Join(kubeletPluginPath, driverName)
 	if err := os.MkdirAll(driverPluginPath, 0750); err != nil {
-		return nil, fmt.Errorf("failed to create plugin path %s: %v", driverPluginPath, err)
+		return nil, fmt.Errorf("failed to create plugin path %s: %w", driverPluginPath, err)
 	}
 
 	kubeletOpts := []kubeletplugin.Option{
@@ -79,7 +79,7 @@ func Start(ctx context.Context, driverName string, kubeClient kubernetes.Interfa
 	}
 	stub, err := stub.New(plugin, nriOpts...)
 	if err != nil {
-		return nil, fmt.Errorf("failed to create plugin stub: %v", err)
+		return nil, fmt.Errorf("failed to create plugin stub: %w", err)
 	}
 	plugin.nriPlugin = stub
 

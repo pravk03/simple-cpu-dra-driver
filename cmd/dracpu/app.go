@@ -24,6 +24,7 @@ import (
 	"os/signal"
 	"runtime/debug"
 	"sync/atomic"
+	"time"
 
 	"github.com/pravk03/dracpu/pkg/driver"
 	"github.com/prometheus/client_golang/prometheus/promhttp"
@@ -73,8 +74,17 @@ func main() {
 	})
 	// Add metrics handler
 	mux.Handle("/metrics", promhttp.Handler())
+	server := &http.Server{
+		Addr:              bindAddress,
+		Handler:           mux,
+		IdleTimeout:       120 * time.Second,
+		ReadTimeout:       10 * time.Second,
+		ReadHeaderTimeout: 5 * time.Second,
+		WriteTimeout:      10 * time.Second,
+	}
+
 	go func() {
-		_ = http.ListenAndServe(bindAddress, mux)
+		_ = server.ListenAndServe()
 	}()
 
 	var config *rest.Config

@@ -19,19 +19,29 @@ OUT_DIR=$(REPO_ROOT)/bin
 CGO_ENABLED=0
 export GOROOT GO111MODULE CGO_ENABLED
 
-build: build-dracpu
+# Setting SHELL to bash allows bash commands to be executed by recipes.                                                                            # Options are set to exit when a recipe line exits non-zero or a piped command fails.                                                                                                                             
+SHELL = /usr/bin/env bash -o pipefail
+.SHELLFLAGS = -ec
 
-build-dracpu:
+default: build ## Default builds
+
+help: ## Display this help.
+	@awk 'BEGIN {FS = ":.*##"; printf "\nUsage:\n  make \033[36m<target>\033[0m\n"} /^[a-zA-Z_0-9-]+:.*?##/ { printf "  \033[36m%-15s\033[0m %s\n", $$1, $$2 } /^##@/ { printf "\n\033[1m%s\033[0m\n", substr($$0, 5) } ' $(MAKEFILE_LIST)
+
+
+build: build-dracpu ## build dracpu
+
+build-dracpu: ## build dracpu
 	go build -v -o "$(OUT_DIR)/dracpu" ./cmd/dracpu
 
 
-clean:
+clean: ## clean
 	rm -rf "$(OUT_DIR)/"
 
-test:
+test: ## run tests
 	CGO_ENABLED=1 go test -v -race -count 1 ./...
 
-update:
+update: ## runs go mod tidy
 	go mod tidy
 
 # get image name from directory we're building
@@ -46,25 +56,28 @@ PLATFORMS?=linux/arm64
 
 # required to enable buildx
 export DOCKER_CLI_EXPERIMENTAL=enabled
-image:
+image: ## docker build load
 # docker buildx build --platform=${PLATFORMS} $(OUTPUT) --progress=$(PROGRESS) -t ${IMAGE} --pull $(EXTRA_BUILD_OPT) .
 	docker build . -t ${IMAGE} --load
 
-image-build:
+image-build: ## build image
 	docker buildx build . \
 		--platform="${PLATFORMS}" \
 		--tag="${IMAGE}"
 
-push-image: image
+push-image: image ## build and push image
 	docker tag ${IMAGE} gcr.io/gke-networking-test-images/dracputest:stable
 	docker push ${IMAGE}
 	docker push gcr.io/gke-networking-test-images/dracputest:stable
 
-kind-cluster:
+kind-cluster:  ## create kind cluster
 	kind create cluster --name dra --config kind.yaml
 
-kind-image: image
+load-kind-image: image ## install on cluster
 	docker tag ${IMAGE} ghcr.io/google/dracpu:stable
 	kind load docker-image ghcr.io/google/dracpu:stable --name dra
 	kubectl delete -f install.yaml || true
 	kubectl apply -f install.yaml
+
+delete-kind-cluster: ## delete kind cluster
+	kind delete cluster --name dra
