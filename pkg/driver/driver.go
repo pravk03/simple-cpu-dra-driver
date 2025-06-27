@@ -22,12 +22,13 @@ const (
 )
 
 type CPUDriver struct {
-	driverName     string
-	nodeName       string
-	kubeClient     kubernetes.Interface
-	draPlugin      *kubeletplugin.Helper
-	nriPlugin      stub.Stub
-	podConfigStore *PodConfigStore
+	driverName           string
+	nodeName             string
+	kubeClient           kubernetes.Interface
+	draPlugin            *kubeletplugin.Helper
+	nriPlugin            stub.Stub
+	podConfigStore       *PodConfigStore
+	podResourceAPIClient *PodResourceClient
 }
 
 type Option func(*CPUDriver)
@@ -65,6 +66,15 @@ func Start(ctx context.Context, driverName string, kubeClient kubernetes.Interfa
 	})
 	if err != nil {
 		return nil, err
+	}
+
+	client, err := NewPodLevelResourcesClient()
+	if err != nil {
+		// TODO(pkrishn): Maybe we can just return error here
+		// return nil, err
+		klog.Warningf("Error getting pod resources client: %v", err)
+	} else {
+		plugin.podResourceAPIClient = client
 	}
 
 	// register the NRI plugin
@@ -106,6 +116,9 @@ func Start(ctx context.Context, driverName string, kubeClient kubernetes.Interfa
 }
 
 func (cp *CPUDriver) Stop() {
+	if cp.podResourceAPIClient != nil {
+		cp.podResourceAPIClient.Close()
+	}
 	cp.nriPlugin.Stop()
 	cp.draPlugin.Stop()
 }

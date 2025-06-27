@@ -51,12 +51,12 @@ func (cp *CPUDriver) CreateContainer(_ context.Context, pod *api.PodSandbox, ctr
 	return adjust, nil, nil
 }
 
-func (cp *CPUDriver) RunPodSandbox(ctx context.Context, pod *api.PodSandbox) error {
+func (cp *CPUDriver) RunPodSandbox(_ context.Context, pod *api.PodSandbox) error {
 	klog.Infof("RunPodSandbox Pod %s/%s UID %s", pod.Namespace, pod.Name, pod.Uid)
 	return nil
 }
 
-func (cp *CPUDriver) StopPodSandbox(ctx context.Context, pod *api.PodSandbox) error {
+func (cp *CPUDriver) StopPodSandbox(_ context.Context, pod *api.PodSandbox) error {
 	klog.Infof("StopPodSandbox Pod %s/%s UID %s", pod.Namespace, pod.Name, pod.Uid)
 	return nil
 }
