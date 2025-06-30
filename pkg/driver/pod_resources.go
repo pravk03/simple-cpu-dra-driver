@@ -85,9 +85,10 @@ func (c *PodResourceClient) HasClient() bool {
 }
 
 // Get queries the given pod's resources.
+// TODO(pravk03): Handle errors and add a retry logic. Kubelet has a rate limit logic.
 func (c *PodResourceClient) Get(ctx context.Context, namespace, pod string) (*PodResources, error) {
 	if !c.HasClient() {
-		return nil, nil
+		return nil, fmt.Errorf("client not initialized")
 	}
 	reply, err := c.cli.Get(ctx, &api.GetPodResourcesRequest{
 		PodNamespace: namespace,

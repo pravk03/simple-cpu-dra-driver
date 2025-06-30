@@ -141,7 +141,11 @@ func (cp *CPUDriver) preparePerContainerClaimFromAPIServer(ctx context.Context, 
 		klog.Infof("prepareResourceClaim claim:%+v claimCPUIDs:%+v", claimNamespacedName, claimCPUIDs)
 
 		for _, container := range containersWithClaim {
-			cp.podConfigStore.SetContainerCPUs(reserved.UID, container, claimNamespacedName, claimCPUIDs)
+			if err := cp.podConfigStore.SetGuaranteedContainerState(reserved.UID, container, claimNamespacedName, claimCPUIDs); err != nil {
+				return kubeletplugin.PrepareResult{
+					Err: err,
+				}
+			}
 		}
 	}
 	return kubeletplugin.PrepareResult{}
@@ -156,7 +160,7 @@ func (cp *CPUDriver) preparePerContainerClaimFromPodResources(ctx context.Contex
 			if err != nil {
 				klog.Errorf("Error getting pod resources for %s: %v", reserved.Name, err)
 				return kubeletplugin.PrepareResult{
-					Err: fmt.Errorf("error getting pod resources for %s: %v", reserved.Name, err),
+					Err: fmt.Errorf("error getting pod resources for %s: %w", reserved.Name, err),
 				}
 			}
 			claimContainers := []string{}
@@ -184,7 +188,11 @@ func (cp *CPUDriver) preparePerContainerClaimFromPodResources(ctx context.Contex
 			klog.Infof("prepareResourceClaim claim:%+v claimCPUIDs:%+v", claimNamespacedName, claimCPUIDs)
 
 			for _, container := range claimContainers {
-				cp.podConfigStore.SetContainerCPUs(reserved.UID, container, claimNamespacedName, claimCPUIDs)
+				if err := cp.podConfigStore.SetGuaranteedContainerState(reserved.UID, container, claimNamespacedName, claimCPUIDs); err != nil {
+					return kubeletplugin.PrepareResult{
+						Err: err,
+					}
+				}
 			}
 		}
 	}
