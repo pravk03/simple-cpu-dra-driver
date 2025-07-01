@@ -51,9 +51,10 @@ func (cp *CPUDriver) CreateContainer(_ context.Context, pod *api.PodSandbox, ctr
 	if guaranteedCPUs, found := cp.podConfigStore.GetGuaranteedCPUs(types.UID(pod.Uid), ctr.Name); found {
 		klog.Infof("Guaranteed CPUs found for pod:%scontainer:%s with cpus:%v", pod.Name, ctr.Name, guaranteedCPUs.String())
 		adjust.SetLinuxCPUSetCPUs(guaranteedCPUs.String())
+		// Remove the guaranteed CPUs from the remaining contianers
 		publicCPUs := cp.podConfigStore.GetPublicCPUs()
 		sharedCPUContainers := cp.podConfigStore.GetContainersWithSharedCPUs()
-		klog.Infof("Public CPUs for remaining contianers %+v", publicCPUs.String())
+		klog.Infof("Updating best-effort contianer's CPUs (public CPUs) to %+v", publicCPUs.String())
 		for _, containerUID := range sharedCPUContainers {
 			containerUpdate := &api.ContainerUpdate{
 				ContainerId: string(containerUID),

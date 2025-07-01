@@ -70,12 +70,9 @@ func Start(ctx context.Context, driverName string, kubeClient kubernetes.Interfa
 
 	client, err := NewPodLevelResourcesClient()
 	if err != nil {
-		// TODO(pkrishn): Maybe we can just return error here
-		// return nil, err
-		klog.Warningf("Error getting pod resources client: %v", err)
-	} else {
-		plugin.podResourceAPIClient = client
+		return nil, fmt.Errorf("failed to create pod level resource client: %w", err)
 	}
+	plugin.podResourceAPIClient = client
 
 	// register the NRI plugin
 	nriOpts := []stub.Option{
@@ -116,9 +113,7 @@ func Start(ctx context.Context, driverName string, kubeClient kubernetes.Interfa
 }
 
 func (cp *CPUDriver) Stop() {
-	if cp.podResourceAPIClient != nil {
-		cp.podResourceAPIClient.Close()
-	}
+	cp.podResourceAPIClient.Close()
 	cp.nriPlugin.Stop()
 	cp.draPlugin.Stop()
 }

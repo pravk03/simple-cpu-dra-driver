@@ -23,7 +23,6 @@ import (
 
 	"github.com/pravk03/topologyutil/pkg/cpuinfo"
 	resourceapi "k8s.io/api/resource/v1beta1"
-	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/types"
 	"k8s.io/dynamic-resource-allocation/kubeletplugin"
 	"k8s.io/dynamic-resource-allocation/resourceslice"
@@ -85,51 +84,40 @@ func (cp *CPUDriver) PrepareResourceClaims(ctx context.Context, claims []*resour
 	}
 
 	for _, claim := range claims {
-		if cp.podResourceAPIClient != nil {
-			result[claim.UID] = cp.preparePerContainerClaimFromPodResources(ctx, claim)
-		} else {
-			// TODO(pravk03): Evaluate removing this option and always use pod resources API
-			result[claim.UID] = cp.preparePerContainerClaimFromAPIServer(ctx, claim)
-		}
+		result[claim.UID] = cp.prepareResourceClaim(ctx, claim)
 	}
 	return result, nil
 }
 
-func (cp *CPUDriver) preparePerContainerClaimFromAPIServer(ctx context.Context, claim *resourceapi.ResourceClaim) kubeletplugin.PrepareResult {
-	klog.Infof("Prepare resource claim using API server call")
+func (cp *CPUDriver) prepareResourceClaim(ctx context.Context, claim *resourceapi.ResourceClaim) kubeletplugin.PrepareResult {
 	claimNamespacedName := types.NamespacedName{Namespace: claim.Namespace, Name: claim.Name}
+	klog.Infof("prepareResourceClaim claim:%s/%s", claim.Namespace, claim.Name)
 	for _, reserved := range claim.Status.ReservedFor {
-
-		// Currently there is no way to map a resource claim to a contianer in the dra hook.
-		// The claim.Status.ReservedFor only contains the podUID.
-		// TODO(pravk03): Explore a way to map container to resource claim without making API request. We may need to use CDI here.
-		pod, err := cp.kubeClient.CoreV1().Pods(claim.Namespace).Get(ctx, reserved.Name, metav1.GetOptions{})
-		if err != nil {
-			klog.Errorf("Error getting pod %s/%s for claim %s: %v", claim.Namespace, reserved.Name, claim.Name, err)
+		if reserved.Resource != "pods" {
+			klog.Infof("Resource must be \"pods\" for CPU DRA driver, got %+v. Skipping...", reserved)
 			continue
 		}
-
-		podResourceClaimNameMap := make(map[string]string)
-		for _, podClaim := range pod.Spec.ResourceClaims {
-			podResourceClaimNameMap[podClaim.Name] = *podClaim.ResourceClaimName
+		podResources, err := cp.podResourceAPIClient.Get(ctx, claim.Namespace, reserved.Name)
+		if err != nil {
+			klog.Errorf("Error getting pod resources for %s: %v", reserved.Name, err)
+			return kubeletplugin.PrepareResult{
+				Err: fmt.Errorf("error getting pod resources for %s: %w", reserved.Name, err),
+			}
 		}
-
-		containersWithClaim := []string{}
-		for _, container := range pod.Spec.Containers {
-			for _, rClaim := range container.Resources.Claims {
-				if podResourceClaimNameMap[rClaim.Name] == claim.Name {
-					containersWithClaim = append(containersWithClaim, container.Name)
+		claimContainers := []string{}
+		for _, container := range podResources.GetContainers() {
+			if container.GetDynamicResources() == nil {
+				continue
+			}
+			for _, containerResource := range container.GetDynamicResources() {
+				klog.Infof("Pod: %s Container:%s Claim:%s/%s", reserved.Name, container.GetName(), containerResource.ClaimNamespace, containerResource.ClaimName)
+				if containerResource.ClaimName == claim.Name && containerResource.ClaimNamespace == claim.Namespace {
+					claimContainers = append(claimContainers, container.GetName())
+					klog.Infof("Pod: %s Container:%s has the current claim", reserved.Name, container.GetName())
 				}
 			}
 		}
-		for _, initContainer := range pod.Spec.InitContainers {
-			for _, rClaim := range initContainer.Resources.Claims {
-				if podResourceClaimNameMap[rClaim.Name] == claim.Name {
-					containersWithClaim = append(containersWithClaim, initContainer.Name)
-				}
-			}
-		}
-		klog.Infof("prepareResourceClaim claim:%+v containersWithClaim:%+v", claimNamespacedName, containersWithClaim)
+
 		claimCPUIDs := []string{}
 		for _, deviceAlloc := range claim.Status.Allocation.Devices.Results {
 			if deviceAlloc.Driver != cp.driverName {
@@ -140,7 +128,7 @@ func (cp *CPUDriver) preparePerContainerClaimFromAPIServer(ctx context.Context, 
 		}
 		klog.Infof("prepareResourceClaim claim:%+v claimCPUIDs:%+v", claimNamespacedName, claimCPUIDs)
 
-		for _, container := range containersWithClaim {
+		for _, container := range claimContainers {
 			if err := cp.podConfigStore.SetGuaranteedContainerState(reserved.UID, container, claimNamespacedName, claimCPUIDs); err != nil {
 				return kubeletplugin.PrepareResult{
 					Err: err,
@@ -148,54 +136,7 @@ func (cp *CPUDriver) preparePerContainerClaimFromAPIServer(ctx context.Context, 
 			}
 		}
 	}
-	return kubeletplugin.PrepareResult{}
-}
 
-func (cp *CPUDriver) preparePerContainerClaimFromPodResources(ctx context.Context, claim *resourceapi.ResourceClaim) kubeletplugin.PrepareResult {
-	klog.Infof("Prepare resource claim using pod resources API")
-	claimNamespacedName := types.NamespacedName{Namespace: claim.Namespace, Name: claim.Name}
-	for _, reserved := range claim.Status.ReservedFor {
-		if reserved.Resource == "pods" {
-			podResources, err := cp.podResourceAPIClient.Get(ctx, claim.Namespace, reserved.Name)
-			if err != nil {
-				klog.Errorf("Error getting pod resources for %s: %v", reserved.Name, err)
-				return kubeletplugin.PrepareResult{
-					Err: fmt.Errorf("error getting pod resources for %s: %w", reserved.Name, err),
-				}
-			}
-			claimContainers := []string{}
-			for _, container := range podResources.GetContainers() {
-				if container.GetDynamicResources() == nil {
-					continue
-				}
-				for _, containerResource := range container.GetDynamicResources() {
-					klog.Infof("Pod: %s Container:%s Claim:%s/%s", reserved.Name, container.GetName(), containerResource.ClaimNamespace, containerResource.ClaimName)
-					if containerResource.ClaimName == claim.Name && containerResource.ClaimNamespace == claim.Namespace {
-						claimContainers = append(claimContainers, container.GetName())
-						klog.Infof("Pod: %s Container:%s has the current claim", reserved.Name, container.GetName())
-					}
-				}
-			}
-
-			claimCPUIDs := []string{}
-			for _, deviceAlloc := range claim.Status.Allocation.Devices.Results {
-				if deviceAlloc.Driver != cp.driverName {
-					continue
-				}
-				numericID := strings.TrimPrefix(deviceAlloc.Device, "cpu")
-				claimCPUIDs = append(claimCPUIDs, numericID)
-			}
-			klog.Infof("prepareResourceClaim claim:%+v claimCPUIDs:%+v", claimNamespacedName, claimCPUIDs)
-
-			for _, container := range claimContainers {
-				if err := cp.podConfigStore.SetGuaranteedContainerState(reserved.UID, container, claimNamespacedName, claimCPUIDs); err != nil {
-					return kubeletplugin.PrepareResult{
-						Err: err,
-					}
-				}
-			}
-		}
-	}
 	return kubeletplugin.PrepareResult{}
 }
 
