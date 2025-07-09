@@ -57,7 +57,7 @@ func NewPodConfigStore() *PodConfigStore {
 }
 
 // SetGuaranteedContainerState records or updates a Guaranteed container's CPU allocation.
-func (s *PodConfigStore) SetGuaranteedContainerState(podUID types.UID, containerName string, guaranteedCPUs cpuset.CPUSet) error {
+func (s *PodConfigStore) SetGuaranteedContainerState(podUID types.UID, containerName string, containerUID types.UID, guaranteedCPUs cpuset.CPUSet) error {
 	s.mu.Lock()
 	defer s.mu.Unlock()
 
@@ -71,6 +71,7 @@ func (s *PodConfigStore) SetGuaranteedContainerState(podUID types.UID, container
 		s.configs[podUID][containerName] = &ContainerCPUState{
 			Type:           CPUTypeGuaranteed,
 			ContainerName:  containerName,
+			ContainerUID:   containerUID,
 			guaranteedCPUs: guaranteedCPUs,
 		}
 	}

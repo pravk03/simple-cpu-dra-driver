@@ -33,12 +33,22 @@ func (cp *CPUDriver) Synchronize(ctx context.Context, pods []*api.PodSandbox, co
 		len(pods), len(containers))
 
 	for _, pod := range pods {
-		klog.Infof("Synchronize Pod %s/%s UID %s", pod.Namespace, pod.Name, pod.Uid)
+		klog.Infof("Synchronize pod %s/%s UID %s", pod.Namespace, pod.Name, pod.Uid)
 		for _, container := range containers {
-			cpus := container.GetLinux().GetResources().GetCpu().GetCpus()
-			klog.Infof("Synchronize container %s cpus:%s", container.Name, cpus)
-			// TODO(pravk03): Restart situations needs to be handled here.
-			// Ran into rate limiting issues when trying to use pod resource API for fetching the resource claim info here.
+			if container.PodSandboxId != pod.Id {
+				continue
+			}
+			guaranteedCPUs, err := parseDRAEnvToCPUSet(container.Env)
+			if err != nil {
+				klog.Errorf("Error parsing DRA env for container %s in pod %s/%s: %v", container.Name, pod.Namespace, pod.Name, err)
+			}
+			if guaranteedCPUs.IsEmpty() {
+				klog.Infof("No guaranteed CPUs found in DRA env for pod %s/%s container %s", pod.Namespace, pod.Name, container.Name)
+				cp.podConfigStore.SetSharedContainerState(types.UID(pod.Uid), container.Name, types.UID(container.Id))
+			} else {
+				klog.Infof("Guaranteed CPUs found for pod %s/%s container %s with cpus: %v", pod.Namespace, pod.Name, container.Name, guaranteedCPUs.String())
+				cp.podConfigStore.SetGuaranteedContainerState(types.UID(pod.Uid), container.Name, types.UID(container.Id), guaranteedCPUs)
+			}
 		}
 	}
 
@@ -51,6 +61,7 @@ func parseDRAEnvToCPUSet(envs []string) (cpuset.CPUSet, error) {
 		if !strings.HasPrefix(env, cdiEnvVarPrefix) {
 			continue
 		}
+		klog.Infof("Parsing DRA env entry: %q", env)
 
 		keyVal := strings.SplitN(env, "=", 2)
 		if len(keyVal) != 2 {
@@ -90,7 +101,7 @@ func (cp *CPUDriver) CreateContainer(_ context.Context, pod *api.PodSandbox, ctr
 	} else {
 		klog.Infof("Guaranteed CPUs found for pod:%scontainer:%s with cpus:%v", pod.Name, ctr.Name, guaranteedCPUs.String())
 		adjust.SetLinuxCPUSetCPUs(guaranteedCPUs.String())
-		cp.podConfigStore.SetGuaranteedContainerState(types.UID(pod.Uid), ctr.Name, guaranteedCPUs)
+		cp.podConfigStore.SetGuaranteedContainerState(types.UID(pod.Uid), ctr.Name, types.UID(ctr.Id), guaranteedCPUs)
 		// Remove the guaranteed CPUs from the remaining contianers
 		publicCPUs := cp.podConfigStore.GetPublicCPUs()
 		sharedCPUContainers := cp.podConfigStore.GetContainersWithSharedCPUs()
