@@ -1,7 +1,6 @@
 package driver
 
 import (
-	"strings"
 	"sync"
 
 	"github.com/pravk03/topologyutil/pkg/cpuinfo"
@@ -18,16 +17,13 @@ const (
 	CPUTypeShared     CPUType = "Shared"
 )
 
-// ClaimCPUAssignments maps a specific claim (by its NamespacedName) to the list of CPUs it provided.
-type ClaimCPUAssignments map[types.NamespacedName]cpuset.CPUSet
-
 // ContainerCPUState holds the CPU allocation type and all claim assignments for a container.
 type ContainerCPUState struct {
-	Type             CPUType
-	ClaimAssignments ClaimCPUAssignments
-	ContainerName    string
-	ContainerUID     types.UID
-	guaranteedCPUs   cpuset.CPUSet
+	Type          CPUType
+	ContainerName string
+	ContainerUID  types.UID
+	// valid only when Type is CPUTypeGuaranteed
+	guaranteedCPUs cpuset.CPUSet
 }
 
 // PodCPUAssignments maps a container name to its CPU state.
@@ -60,15 +56,10 @@ func NewPodConfigStore() *PodConfigStore {
 	}
 }
 
-// SetGuaranteedContainerState records or updates a Guaranteed container's CPU allocation from a specific claim.
-func (s *PodConfigStore) SetGuaranteedContainerState(podUID types.UID, containerName string, claimName types.NamespacedName, cpuList []string) error {
+// SetGuaranteedContainerState records or updates a Guaranteed container's CPU allocation.
+func (s *PodConfigStore) SetGuaranteedContainerState(podUID types.UID, containerName string, guaranteedCPUs cpuset.CPUSet) error {
 	s.mu.Lock()
 	defer s.mu.Unlock()
-
-	claimCPUs, err := cpuset.Parse(strings.Join(cpuList, ","))
-	if err != nil {
-		return err
-	}
 
 	// Ensure pod and container entries exist.
 	if _, ok := s.configs[podUID]; !ok {
@@ -78,16 +69,14 @@ func (s *PodConfigStore) SetGuaranteedContainerState(podUID types.UID, container
 
 	if _, ok := podAssignments[containerName]; !ok {
 		s.configs[podUID][containerName] = &ContainerCPUState{
-			Type:             CPUTypeGuaranteed,
-			ClaimAssignments: make(ClaimCPUAssignments),
-			ContainerName:    containerName,
+			Type:           CPUTypeGuaranteed,
+			ContainerName:  containerName,
+			guaranteedCPUs: guaranteedCPUs,
 		}
 	}
-	podAssignments[containerName].ClaimAssignments[claimName] = claimCPUs
-	podAssignments[containerName].guaranteedCPUs = podAssignments[containerName].guaranteedCPUs.Union(claimCPUs)
 
 	s.recalculatePublicCPUs()
-	klog.Infof("Set Guaranteed CPUs for PodUID:%v Container:%s Claim:%v CPUs:%v s.configs[podUID][containerName].guaranteedCPUs:%v", podUID, containerName, claimName, claimCPUs.String(), s.configs[podUID][containerName].guaranteedCPUs.String())
+	klog.Infof("Set Guaranteed CPUs for PodUID:%v Container:%s guaranteedCPUs:%v", podUID, containerName, s.configs[podUID][containerName].guaranteedCPUs.String())
 	return nil
 }
 
@@ -101,13 +90,11 @@ func (s *PodConfigStore) SetSharedContainerState(podUID types.UID, containerName
 		s.configs[podUID] = make(PodCPUAssignments)
 	}
 	s.configs[podUID][containerName] = &ContainerCPUState{
-		Type: CPUTypeShared,
-		// No specific claims for shared containers.
-		ClaimAssignments: nil,
-		ContainerName:    containerName,
-		ContainerUID:     containerUID,
+		Type:          CPUTypeShared,
+		ContainerName: containerName,
+		ContainerUID:  containerUID,
 	}
-	klog.Infof("Set container %s in pod %v to Shared", containerName, podUID)
+	klog.Infof("Set container %s in PodUID %v to Shared", containerName, podUID)
 }
 
 // GetGuaranteedCPUs returns the complete set of CPUs for a guaranteed container by aggregating CPUs from all their claims.
@@ -160,15 +147,15 @@ func (s *PodConfigStore) GetPublicCPUs() cpuset.CPUSet {
 }
 
 func (s *PodConfigStore) recalculatePublicCPUs() {
-	reservedCPUs := cpuset.New()
+	guaranteedCPUs := cpuset.New()
 	for _, podAssignments := range s.configs {
 		for _, state := range podAssignments {
 			if state.Type == CPUTypeGuaranteed {
-				reservedCPUs = reservedCPUs.Union(state.guaranteedCPUs)
+				guaranteedCPUs = guaranteedCPUs.Union(state.guaranteedCPUs)
 			}
 		}
 	}
-	s.publicCPUs = s.allCPUs.Difference(reservedCPUs)
+	s.publicCPUs = s.allCPUs.Difference(guaranteedCPUs)
 }
 
 func (s *PodConfigStore) DeletePod(podUID types.UID) {
@@ -188,27 +175,4 @@ func (s *PodConfigStore) DeletePod(podUID types.UID) {
 		s.recalculatePublicCPUs()
 	}
 	delete(s.configs, podUID)
-}
-
-// DeleteClaim removes all CPU assignments associated with a specific claim across all containers.
-func (s *PodConfigStore) DeleteClaim(claimNameToDelete types.NamespacedName) {
-	s.mu.Lock()
-	defer s.mu.Unlock()
-	recalculatePublicCPUs := false
-	klog.Infof("Attempting to delete all assignments for claim: %v", claimNameToDelete)
-	for podUID, podAssignments := range s.configs {
-		for containerName, state := range podAssignments {
-			if state.Type == CPUTypeGuaranteed {
-				if _, claimExists := state.ClaimAssignments[claimNameToDelete]; claimExists {
-					state.guaranteedCPUs = state.guaranteedCPUs.Difference(state.ClaimAssignments[claimNameToDelete])
-					delete(state.ClaimAssignments, claimNameToDelete)
-					klog.Infof("Removed claim '%v' from container '%s' in pod '%v'", claimNameToDelete, containerName, podUID)
-					recalculatePublicCPUs = true
-				}
-			}
-		}
-	}
-	if recalculatePublicCPUs {
-		s.recalculatePublicCPUs()
-	}
 }

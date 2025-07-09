@@ -19,6 +19,7 @@ package driver
 import (
 	"context"
 	"fmt"
+	"strconv"
 	"strings"
 
 	"github.com/pravk03/topologyutil/pkg/cpuinfo"
@@ -27,6 +28,8 @@ import (
 	"k8s.io/dynamic-resource-allocation/kubeletplugin"
 	"k8s.io/dynamic-resource-allocation/resourceslice"
 	"k8s.io/klog/v2"
+	"k8s.io/utils/cpuset"
+	cdiparser "tags.cncf.io/container-device-interface/pkg/parser"
 )
 
 func createCPUDevices() []resourceapi.Device {
@@ -36,7 +39,7 @@ func createCPUDevices() []resourceapi.Device {
 		klog.Errorf("error getting CPU topology: %v", err)
 		return nil
 	}
-	klog.Infof("CPU topology: %v", cpuInfo)
+	klog.V(5).Infof("CPU topology: %+v", cpuInfo)
 	devices := []resourceapi.Device{}
 
 	for _, cpu := range cpuInfo {
@@ -89,55 +92,53 @@ func (cp *CPUDriver) PrepareResourceClaims(ctx context.Context, claims []*resour
 	return result, nil
 }
 
-func (cp *CPUDriver) prepareResourceClaim(ctx context.Context, claim *resourceapi.ResourceClaim) kubeletplugin.PrepareResult {
-	claimNamespacedName := types.NamespacedName{Namespace: claim.Namespace, Name: claim.Name}
+func getCDIDeviceName(uid types.UID) string {
+	return fmt.Sprintf("claim-%s", uid)
+}
+
+func (cp *CPUDriver) prepareResourceClaim(_ context.Context, claim *resourceapi.ResourceClaim) kubeletplugin.PrepareResult {
 	klog.Infof("prepareResourceClaim claim:%s/%s", claim.Namespace, claim.Name)
-	for _, reserved := range claim.Status.ReservedFor {
-		if reserved.Resource != "pods" {
-			klog.Infof("Resource must be \"pods\" for CPU DRA driver, got %+v. Skipping...", reserved)
+
+	claimCPUIDs := []int{}
+	for _, alloc := range claim.Status.Allocation.Devices.Results {
+		if alloc.Driver != cp.driverName {
 			continue
 		}
-		podResources, err := cp.podResourceAPIClient.Get(ctx, claim.Namespace, reserved.Name)
+		cpuID, err := strconv.Atoi(strings.TrimPrefix(alloc.Device, "cpu"))
 		if err != nil {
-			klog.Errorf("Error getting pod resources for %s: %v", reserved.Name, err)
 			return kubeletplugin.PrepareResult{
-				Err: fmt.Errorf("error getting pod resources for %s: %w", reserved.Name, err),
+				Err: fmt.Errorf("error parsing CPU ID from device %q for claim %s: %v", alloc.Device, claim.Name, err),
 			}
 		}
-		claimContainers := []string{}
-		for _, container := range podResources.GetContainers() {
-			if container.GetDynamicResources() == nil {
-				continue
-			}
-			for _, containerResource := range container.GetDynamicResources() {
-				klog.Infof("Pod: %s Container:%s Claim:%s/%s", reserved.Name, container.GetName(), containerResource.ClaimNamespace, containerResource.ClaimName)
-				if containerResource.ClaimName == claim.Name && containerResource.ClaimNamespace == claim.Namespace {
-					claimContainers = append(claimContainers, container.GetName())
-					klog.Infof("Pod: %s Container:%s has the current claim", reserved.Name, container.GetName())
-				}
-			}
-		}
+		claimCPUIDs = append(claimCPUIDs, cpuID)
+	}
+	claimCPUSet := cpuset.New(claimCPUIDs...)
 
-		claimCPUIDs := []string{}
-		for _, deviceAlloc := range claim.Status.Allocation.Devices.Results {
-			if deviceAlloc.Driver != cp.driverName {
-				continue
-			}
-			numericID := strings.TrimPrefix(deviceAlloc.Device, "cpu")
-			claimCPUIDs = append(claimCPUIDs, numericID)
-		}
-		klog.Infof("prepareResourceClaim claim:%+v claimCPUIDs:%+v", claimNamespacedName, claimCPUIDs)
-
-		for _, container := range claimContainers {
-			if err := cp.podConfigStore.SetGuaranteedContainerState(reserved.UID, container, claimNamespacedName, claimCPUIDs); err != nil {
-				return kubeletplugin.PrepareResult{
-					Err: err,
-				}
-			}
-		}
+	if claimCPUSet.IsEmpty() {
+		klog.Errorf("prepareResourceClaim claim:%s/%s has no CPU allocations", claim.Namespace, claim.Name)
+		return kubeletplugin.PrepareResult{}
 	}
 
-	return kubeletplugin.PrepareResult{}
+	deviceName := getCDIDeviceName(claim.UID)
+	envVar := fmt.Sprintf("%s_claim_%s=%s", cdiEnvVarPrefix, claim.Name, claimCPUSet.String())
+	if err := cp.cdiMgr.AddDevice(deviceName, envVar); err != nil {
+		return kubeletplugin.PrepareResult{Err: err}
+	}
+
+	qualifiedName := cdiparser.QualifiedName(cdiVendor, cdiClass, deviceName)
+	preparedDevices := []kubeletplugin.Device{}
+	for _, allocResult := range claim.Status.Allocation.Devices.Results {
+		preparedDevice := kubeletplugin.Device{
+			PoolName:     allocResult.Pool,
+			DeviceName:   allocResult.Device,
+			CDIDeviceIDs: []string{qualifiedName},
+		}
+		preparedDevices = append(preparedDevices, preparedDevice)
+	}
+
+	return kubeletplugin.PrepareResult{
+		Devices: preparedDevices,
+	}
 }
 
 func (np *CPUDriver) UnprepareResourceClaims(ctx context.Context, claims []kubeletplugin.NamespacedObject) (map[types.UID]error, error) {
@@ -161,6 +162,6 @@ func (np *CPUDriver) UnprepareResourceClaims(ctx context.Context, claims []kubel
 }
 
 func (cp *CPUDriver) unprepareResourceClaim(_ context.Context, claim kubeletplugin.NamespacedObject) error {
-	cp.podConfigStore.DeleteClaim(claim.NamespacedName)
-	return nil
+	// Remove the device from the CDI spec file using the manager.
+	return cp.cdiMgr.RemoveDevice(getCDIDeviceName(claim.UID))
 }

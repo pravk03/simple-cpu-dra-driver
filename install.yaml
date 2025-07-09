@@ -150,6 +150,8 @@ spec:
         - name: pod-resources-socket
           mountPath: /var/lib/kubelet/pod-resources
           readOnly: true
+        - name: cdi-dir
+          mountPath: /var/run/cdi
       volumes:
       - name: device-plugin
         hostPath:
@@ -172,3 +174,7 @@ spec:
       - name: pod-resources-socket
         hostPath:
           path: /var/lib/kubelet/pod-resources
+      - name: cdi-dir
+        hostPath:
+          path: /var/run/cdi
+          type: DirectoryOrCreate

@@ -52,7 +52,5 @@ featureGates:
   # Enable the corresponding DRA feature gates
   DynamicResourceAllocation: true
   DRAResourceClaimDeviceStatus: true
-  KubeletPodResourcesDynamicResources: true
-  KubeletPodResourcesGet: true
 runtimeConfig:
   api/beta : true

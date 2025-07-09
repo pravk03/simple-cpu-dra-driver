@@ -22,13 +22,13 @@ const (
 )
 
 type CPUDriver struct {
-	driverName           string
-	nodeName             string
-	kubeClient           kubernetes.Interface
-	draPlugin            *kubeletplugin.Helper
-	nriPlugin            stub.Stub
-	podConfigStore       *PodConfigStore
-	podResourceAPIClient *PodResourceClient
+	driverName     string
+	nodeName       string
+	kubeClient     kubernetes.Interface
+	draPlugin      *kubeletplugin.Helper
+	nriPlugin      stub.Stub
+	podConfigStore *PodConfigStore
+	cdiMgr         *CdiManager
 }
 
 type Option func(*CPUDriver)
@@ -68,11 +68,11 @@ func Start(ctx context.Context, driverName string, kubeClient kubernetes.Interfa
 		return nil, err
 	}
 
-	client, err := NewPodLevelResourcesClient()
+	cdiMgr, err := NewCdiManager(driverName)
 	if err != nil {
-		return nil, fmt.Errorf("failed to create pod level resource client: %w", err)
+		return nil, fmt.Errorf("failed to create CDI manager: %w", err)
 	}
-	plugin.podResourceAPIClient = client
+	plugin.cdiMgr = cdiMgr
 
 	// register the NRI plugin
 	nriOpts := []stub.Option{
@@ -113,7 +113,6 @@ func Start(ctx context.Context, driverName string, kubeClient kubernetes.Interfa
 }
 
 func (cp *CPUDriver) Stop() {
-	cp.podResourceAPIClient.Close()
 	cp.nriPlugin.Stop()
 	cp.draPlugin.Stop()
 }

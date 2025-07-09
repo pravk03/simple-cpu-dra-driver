@@ -18,9 +18,12 @@ package driver
 
 import (
 	"context"
+	"fmt"
+	"strings"
 
 	"github.com/containerd/nri/pkg/api"
 	"k8s.io/apimachinery/pkg/types"
+	"k8s.io/utils/cpuset"
 
 	"k8s.io/klog/v2"
 )
@@ -42,15 +45,52 @@ func (cp *CPUDriver) Synchronize(ctx context.Context, pods []*api.PodSandbox, co
 	return nil, nil
 }
 
+func parseDRAEnvToCPUSet(envs []string) (cpuset.CPUSet, error) {
+	guaranteedCPUs := cpuset.New()
+	for _, env := range envs {
+		if !strings.HasPrefix(env, cdiEnvVarPrefix) {
+			continue
+		}
+
+		keyVal := strings.SplitN(env, "=", 2)
+		if len(keyVal) != 2 {
+			klog.Errorf("Malformed DRA env entry %q, expected format: %s_key=value", env, cdiEnvVarPrefix)
+			continue
+		}
+		cpuSetValue := keyVal[1]
+
+		parsedSet, err := cpuset.Parse(cpuSetValue)
+		if err != nil {
+			return cpuset.New(), fmt.Errorf("failed to parse cpuset value %q from env %q: %w", cpuSetValue, env, err)
+		}
+
+		guaranteedCPUs = guaranteedCPUs.Union(parsedSet)
+	}
+
+	return guaranteedCPUs, nil
+}
+
 // CreateContainer handles container creation requests.
 func (cp *CPUDriver) CreateContainer(_ context.Context, pod *api.PodSandbox, ctr *api.Container) (*api.ContainerAdjustment, []*api.ContainerUpdate, error) {
 	klog.Infof("CreateContainer Pod:%s/%s PodUID:%s Container:%s ContainerID:%s", pod.Namespace, pod.Name, pod.Uid, ctr.Name, ctr.Id)
 	adjust := &api.ContainerAdjustment{}
 	updates := []*api.ContainerUpdate{}
 
-	if guaranteedCPUs, found := cp.podConfigStore.GetGuaranteedCPUs(types.UID(pod.Uid), ctr.Name); found {
+	guaranteedCPUs, err := parseDRAEnvToCPUSet(ctr.Env)
+	if err != nil {
+		klog.Errorf("Error parsing DRA env for container %s in pod %s/%s: %v", ctr.Name, pod.Namespace, pod.Name, err)
+	}
+
+	if guaranteedCPUs.IsEmpty() {
+		// No guaranteed CPUs found, use public CPUs.
+		publicCPUs := cp.podConfigStore.GetPublicCPUs()
+		klog.Infof("No guaranteed CPUs found in DRA env for pod %s/%s container %s. Using public CPUs %s", pod.Namespace, pod.Name, ctr.Name, publicCPUs.String())
+		adjust.SetLinuxCPUSetCPUs(publicCPUs.String())
+		cp.podConfigStore.SetSharedContainerState(types.UID(pod.Uid), ctr.Name, types.UID(ctr.Id))
+	} else {
 		klog.Infof("Guaranteed CPUs found for pod:%scontainer:%s with cpus:%v", pod.Name, ctr.Name, guaranteedCPUs.String())
 		adjust.SetLinuxCPUSetCPUs(guaranteedCPUs.String())
+		cp.podConfigStore.SetGuaranteedContainerState(types.UID(pod.Uid), ctr.Name, guaranteedCPUs)
 		// Remove the guaranteed CPUs from the remaining contianers
 		publicCPUs := cp.podConfigStore.GetPublicCPUs()
 		sharedCPUContainers := cp.podConfigStore.GetContainersWithSharedCPUs()
@@ -62,11 +102,6 @@ func (cp *CPUDriver) CreateContainer(_ context.Context, pod *api.PodSandbox, ctr
 			containerUpdate.SetLinuxCPUSetCPUs(publicCPUs.String())
 			updates = append(updates, containerUpdate)
 		}
-	} else {
-		cp.podConfigStore.SetSharedContainerState(types.UID(pod.Uid), ctr.Name, types.UID(ctr.Id))
-		publicCPUs := cp.podConfigStore.GetPublicCPUs()
-		klog.Infof("Resource claim not found for pod %s/%s container %s. Setting CPUSet to public CPUs: %v", pod.Namespace, pod.Name, ctr.Name, publicCPUs.String())
-		adjust.SetLinuxCPUSetCPUs(publicCPUs.String())
 	}
 	return adjust, updates, nil
 }
