@@ -56,71 +56,58 @@ func NewPodConfigStore() *PodConfigStore {
 	}
 }
 
-// SetGuaranteedContainerState records or updates a Guaranteed container's CPU allocation.
-func (s *PodConfigStore) SetGuaranteedContainerState(podUID types.UID, containerName string, containerUID types.UID, guaranteedCPUs cpuset.CPUSet) error {
+// SetContainerState records or updates a container's CPU allocation using a state object.
+func (s *PodConfigStore) SetContainerState(podUID types.UID, state *ContainerCPUState) {
 	s.mu.Lock()
 	defer s.mu.Unlock()
 
-	// Ensure pod and container entries exist.
 	if _, ok := s.configs[podUID]; !ok {
 		s.configs[podUID] = make(PodCPUAssignments)
 	}
-	podAssignments := s.configs[podUID]
 
-	if _, ok := podAssignments[containerName]; !ok {
-		s.configs[podUID][containerName] = &ContainerCPUState{
-			Type:           CPUTypeGuaranteed,
-			ContainerName:  containerName,
-			ContainerUID:   containerUID,
-			guaranteedCPUs: guaranteedCPUs,
-		}
+	// Use the container name from the state object as the map key.
+	s.configs[podUID][state.ContainerName] = state
+
+	if state.Type == CPUTypeGuaranteed {
+		// Recalculate public CPUs after any change that could affect guaranteed CPUs.
+		s.recalculatePublicCPUs()
 	}
 
-	s.recalculatePublicCPUs()
-	klog.Infof("Set Guaranteed CPUs for PodUID:%v Container:%s guaranteedCPUs:%v", podUID, containerName, s.configs[podUID][containerName].guaranteedCPUs.String())
-	return nil
+	if state.Type == CPUTypeGuaranteed {
+		klog.Infof("Set Guaranteed CPUs for PodUID:%v Container:%s guaranteedCPUs:%v", podUID, state.ContainerName, state.guaranteedCPUs.String())
+	} else {
+		klog.Infof("Set PodUID:%v Container:%s to Shared", podUID, state.ContainerName)
+	}
 }
 
-// SetSharedContainerState marks a container as running on the shared CPU pool.
-func (s *PodConfigStore) SetSharedContainerState(podUID types.UID, containerName string, containerUID types.UID) {
+// RemoveContainerState removes a container's state from the store.
+func (s *PodConfigStore) RemoveContainerState(podUID types.UID, containerName string) {
 	s.mu.Lock()
 	defer s.mu.Unlock()
 
-	// Ensure pod and container entries exist.
-	if _, ok := s.configs[podUID]; !ok {
-		s.configs[podUID] = make(PodCPUAssignments)
-	}
-	s.configs[podUID][containerName] = &ContainerCPUState{
-		Type:          CPUTypeShared,
-		ContainerName: containerName,
-		ContainerUID:  containerUID,
-	}
-	klog.Infof("Set container %s in PodUID %v to Shared", containerName, podUID)
-}
-
-// GetGuaranteedCPUs returns the complete set of CPUs for a guaranteed container by aggregating CPUs from all their claims.
-func (s *PodConfigStore) GetGuaranteedCPUs(podUID types.UID, containerName string) (cpuset.CPUSet, bool) {
-	s.mu.RLock()
-	defer s.mu.RUnlock()
-
-	cpus := cpuset.New()
-	podAssignments, podFound := s.configs[podUID]
-	if !podFound {
-		return cpus, false
+	podAssignments, ok := s.configs[podUID]
+	if !ok {
+		return
 	}
 
-	state, containerFound := podAssignments[containerName]
-	if !containerFound {
-		return cpus, false
+	state, ok := podAssignments[containerName]
+	if !ok {
+		return
 	}
 
-	if state.Type == CPUTypeShared {
-		return cpus, false
+	klog.Infof("Removing container state for %s from PodUID %v", containerName, podUID)
+	delete(podAssignments, containerName)
+
+	// If this was the last container for the pod, clean up the pod entry itself.
+	if len(podAssignments) == 0 {
+		delete(s.configs, podUID)
 	}
 
-	klog.Infof("GetGuaranteedCPUs state.guaranteedCPUs:%s", state.guaranteedCPUs.String())
-	// For Guaranteed containers, aggregate CPUs from all associated claims.
-	return state.guaranteedCPUs, true
+	// If a guaranteed container was removed, its CPUs must be returned to the public pool.
+	if state.Type == CPUTypeGuaranteed {
+		s.recalculatePublicCPUs()
+		klog.Infof("Recalculated public CPUs after removing guaranteed container.")
+	}
 }
 
 // TODO(pravk03): Cache this and return in O(1).
@@ -131,12 +118,48 @@ func (s *PodConfigStore) GetContainersWithSharedCPUs() []types.UID {
 	for _, podAssignments := range s.configs {
 		for _, state := range podAssignments {
 			if state.Type == CPUTypeShared {
-				klog.Infof("Found shared container %+v", state)
 				sharedCPUContainers = append(sharedCPUContainers, state.ContainerUID)
 			}
 		}
 	}
+
 	return sharedCPUContainers
+}
+
+// IsContainerGuaranteed checks if the container has a guaranteed CPU allocation.
+func (s *PodConfigStore) IsContainerGuaranteed(podUID types.UID, containerName string) bool {
+	s.mu.RLock()
+	defer s.mu.RUnlock()
+	podAssignments, ok := s.configs[podUID]
+	if !ok {
+		klog.Warningf("Pod with UID %v not found in PodConfigStore", podUID)
+		return false
+	}
+
+	containerState, ok := podAssignments[containerName]
+	if !ok {
+		klog.Warningf("Container %s not found in Pod %v in PodConfigStore", containerName, podUID)
+		return false
+	}
+	return containerState.Type == CPUTypeGuaranteed
+}
+
+// IsPodGuaranteed checks if any container in the pod has a guaranteed CPU allocation.
+func (s *PodConfigStore) IsPodGuaranteed(podUID types.UID) bool {
+	s.mu.RLock()
+	defer s.mu.RUnlock()
+	podAssignments, ok := s.configs[podUID]
+	if !ok {
+		klog.Warningf("Pod with UID %v not found in PodConfigStore", podUID)
+		return false
+	}
+
+	for _, state := range podAssignments {
+		if state.Type == CPUTypeGuaranteed {
+			return true
+		}
+	}
+	return false
 }
 
 // GetPublicCPUs calculates and returns the list of CPUs not reserved by any Guaranteed containers.
@@ -159,7 +182,7 @@ func (s *PodConfigStore) recalculatePublicCPUs() {
 	s.publicCPUs = s.allCPUs.Difference(guaranteedCPUs)
 }
 
-func (s *PodConfigStore) DeletePod(podUID types.UID) {
+func (s *PodConfigStore) DeletePodState(podUID types.UID) {
 	s.mu.Lock()
 	defer s.mu.Unlock()
 	if _, ok := s.configs[podUID]; !ok {
@@ -172,8 +195,8 @@ func (s *PodConfigStore) DeletePod(podUID types.UID) {
 			break
 		}
 	}
+	delete(s.configs, podUID)
 	if recalculatePublicCPUs {
 		s.recalculatePublicCPUs()
 	}
-	delete(s.configs, podUID)
 }

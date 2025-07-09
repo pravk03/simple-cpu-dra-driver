@@ -134,7 +134,7 @@ func (c *CdiManager) readSpecFromFile() (*cdiSpec.Spec, error) {
 	if err := json.Unmarshal(data, spec); err != nil {
 		return nil, fmt.Errorf("error unmarshaling CDI spec from %q: %w", c.path, err)
 	}
-	klog.Infof("Read CDI spec from %q: %+v", c.path, spec)
+	klog.Infof("Read CDI spec from %q", c.path)
 	return spec, nil
 }
 
@@ -158,6 +158,6 @@ func (c *CdiManager) writeSpecToFile(spec *cdiSpec.Spec) error {
 		return fmt.Errorf("error syncing CDI file: %w", err)
 	}
 
-	klog.Infof("Successfully updated and synced CDI spec file %q. data: %+v", c.path, data)
+	klog.Infof("Successfully updated and synced CDI spec file %q", c.path)
 	return nil
 }

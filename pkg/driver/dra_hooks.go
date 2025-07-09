@@ -107,7 +107,7 @@ func (cp *CPUDriver) prepareResourceClaim(_ context.Context, claim *resourceapi.
 		cpuID, err := strconv.Atoi(strings.TrimPrefix(alloc.Device, "cpu"))
 		if err != nil {
 			return kubeletplugin.PrepareResult{
-				Err: fmt.Errorf("error parsing CPU ID from device %q for claim %s: %v", alloc.Device, claim.Name, err),
+				Err: fmt.Errorf("error parsing CPU ID from device %q for claim %s: %w", alloc.Device, claim.Name, err),
 			}
 		}
 		claimCPUIDs = append(claimCPUIDs, cpuID)
