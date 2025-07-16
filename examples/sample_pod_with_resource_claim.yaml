@@ -8,22 +8,11 @@ spec:
       image: "registry.k8s.io/pause:3.9"
       resources:
         requests:
-          cpu: "4"
+          cpu: "8"
         limits:
-          cpu: "4"
+          cpu: "8"
         claims:
           - name: "container1-claim"
-    - name: container2
-      image: "registry.k8s.io/pause:3.9"
-      resources:
-        requests:
-          cpu: "6"
-        limits:
-          cpu: "6"
-        claims:
-          - name: "container2-claim"
   resourceClaims:
     - name: "container1-claim"
-      resourceClaimName: dummy-cpu-request
-    - name: "container2-claim"
-      resourceClaimName: dummy-cpu-request-2
+      resourceClaimName: cpu-nic-request

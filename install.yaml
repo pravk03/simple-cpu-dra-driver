@@ -178,3 +178,12 @@ spec:
         hostPath:
           path: /var/run/cdi
           type: DirectoryOrCreate
+---
+apiVersion: resource.k8s.io/v1beta1
+kind: DeviceClass
+metadata:
+  name: dra.cpu
+spec:
+  selectors:
+    - cel:
+        expression: device.driver == "dra.cpu"

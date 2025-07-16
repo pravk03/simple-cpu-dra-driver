@@ -12,7 +12,7 @@ import (
 )
 
 const (
-	cdiSpecVersion  = "1.0.0"
+	cdiSpecVersion  = "0.8.0"
 	cdiVendor       = "dra.k8s.io"
 	cdiClass        = "cpu"
 	cdiSpecDir      = "/var/run/cdi"
@@ -134,7 +134,7 @@ func (c *CdiManager) readSpecFromFile() (*cdiSpec.Spec, error) {
 	if err := json.Unmarshal(data, spec); err != nil {
 		return nil, fmt.Errorf("error unmarshaling CDI spec from %q: %w", c.path, err)
 	}
-	klog.Infof("Read CDI spec from %q", c.path)
+	klog.Infof("Read CDI spec from %q spec:%+v", c.path, spec)
 	return spec, nil
 }
 
