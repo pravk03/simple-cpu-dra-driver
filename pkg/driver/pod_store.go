@@ -3,7 +3,7 @@ package driver
 import (
 	"sync"
 
-	"github.com/pravk03/topologyutil/pkg/cpuinfo"
+	"github.com/pravk03/dracpu/pkg/cpuinfo"
 	"k8s.io/apimachinery/pkg/types"
 	"k8s.io/klog/v2"
 	"k8s.io/utils/cpuset"

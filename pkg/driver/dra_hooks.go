@@ -23,7 +23,7 @@ import (
 	"strconv"
 	"strings"
 
-	"github.com/pravk03/topologyutil/pkg/cpuinfo"
+	"github.com/pravk03/dracpu/pkg/cpuinfo"
 	resourceapi "k8s.io/api/resource/v1beta1"
 	"k8s.io/apimachinery/pkg/types"
 	"k8s.io/dynamic-resource-allocation/kubeletplugin"
@@ -35,8 +35,6 @@ import (
 
 const maxDevicesPerSlice = 128
 
-// CreateCPUDeviceSlices creates the minimum number of device slices required,
-// splitting into chunks only if the total number of devices exceeds the limit.
 func CreateCPUDeviceSlices() [][]resourceapi.Device {
 	cpuInfo, err := cpuinfo.GetCPUInfos()
 	if err != nil {
@@ -44,66 +42,61 @@ func CreateCPUDeviceSlices() [][]resourceapi.Device {
 		return nil
 	}
 
+	devicesByNuma := make(map[int64][]resourceapi.Device)
+	for _, cpu := range cpuInfo {
+		numaNode := int64(cpu.NumaNode)
+		l3CacheID := int64(cpu.L3CacheId)
+		socketID := int64(cpu.SocketId)
+		// cpuIDint64 := int64(cpu.CpuId)
+		// coreIDint64 := int64(cpu.CoreId)
+		cpuDevice := resourceapi.Device{
+			Name: fmt.Sprintf("cpu%d", cpu.CpuId),
+			Basic: &resourceapi.BasicDevice{
+				Attributes: map[resourceapi.QualifiedName]resourceapi.DeviceAttribute{
+					"numaNode":  {IntValue: &numaNode},
+					"l3CacheID": {IntValue: &l3CacheID},
+					"coreType":  {StringValue: &cpu.CoreType},
+					"socketID":  {IntValue: &socketID},
+					// TODO(pravk03): Remove. Hack to allign with NIC (DRANet). We need some standard attribute to allign other resources with CPU.
+					"dra.net/numaNode": {IntValue: &numaNode},
+					// "cpuID":            {IntValue: &cpuIDint64},
+					// "coreID":           {IntValue: &coreIDint64},
+					// "numaAffinityMask": {StringValue: &cpu.NumaNodeAffinityMask},
+				},
+				Capacity: make(map[resourceapi.QualifiedName]resourceapi.DeviceCapacity),
+			},
+		}
+		devicesByNuma[numaNode] = append(devicesByNuma[numaNode], cpuDevice)
+	}
+
 	numDevices := len(cpuInfo)
 	if numDevices <= maxDevicesPerSlice {
 		klog.Infof("Total devices (%d) is within limit (%d), creating a single resource slice.", numDevices, maxDevicesPerSlice)
-		// Create a single flat list of devices since no grouping is necessary.
 		var allDevices []resourceapi.Device
-		for _, cpu := range cpuInfo {
-			// cpuID := int64(cpu.CpuId)
-			// coreID := int64(cpu.CoreId)
-			numaNode := int64(cpu.NumaNode)
 
-			cpuDevice := resourceapi.Device{
-				Name: fmt.Sprintf("cpu%d", cpu.CpuId),
-				Basic: &resourceapi.BasicDevice{
-					Attributes: map[resourceapi.QualifiedName]resourceapi.DeviceAttribute{
-						//"cpuID":    {IntValue: &cpuID},
-						//"coreID":   {IntValue: &coreID},
-						"numaNode": {IntValue: &numaNode},
-						// TODO(pravk03): Remove this once we align on standard attributes. This is a hack to test resource allignment with dranet.
-						"dra.net/numaNode": {IntValue: &numaNode},
-						// "numaAffinityMask": {StringValue: &cpu.NumaNodeAffinityMask},
-					},
-					Capacity: make(map[resourceapi.QualifiedName]resourceapi.DeviceCapacity),
-				},
-			}
-			allDevices = append(allDevices, cpuDevice)
+		// Sort NUMA node IDs to ensure a deterministic flattening order.
+		numaNodeIDs := make([]int, 0, len(devicesByNuma))
+		for id := range devicesByNuma {
+			numaNodeIDs = append(numaNodeIDs, int(id))
+		}
+		sort.Ints(numaNodeIDs)
+
+		// Flatten the map's values into a single slice.
+		for _, id := range numaNodeIDs {
+			allDevices = append(allDevices, devicesByNuma[int64(id)]...)
 		}
 
 		if len(allDevices) == 0 {
 			return nil
 		}
 		return [][]resourceapi.Device{allDevices}
+
 	} else {
 		klog.Infof("Total devices (%d) exceeds limit (%d), creating one resource slice per NUMA node.", numDevices, maxDevicesPerSlice)
-		// Since the limit is exceeded, now we group by NUMA node to create separate slices.
-		devicesByNuma := make(map[int64][]resourceapi.Device)
-		for _, cpu := range cpuInfo {
-			numaNode := int64(cpu.NumaNode)
-			// cpuID := int64(cpu.CpuId)
-			// coreID := int64(cpu.CoreId)
-
-			cpuDevice := resourceapi.Device{
-				Name: fmt.Sprintf("cpu%d", cpu.CpuId),
-				Basic: &resourceapi.BasicDevice{
-					Attributes: map[resourceapi.QualifiedName]resourceapi.DeviceAttribute{
-						//"cpuID": {IntValue: &cpuID},
-						// "coreID":   {IntValue: &coreID},
-						"numaNode": {IntValue: &numaNode},
-						// TODO(pravk03): Remove this once we align on standard attributes. This is a hack to test resource allignment with dranet.
-						"dra.net/numaNode": {IntValue: &numaNode},
-						// "numaAffinityMask": {StringValue: &cpu.NumaNodeAffinityMask},
-					},
-					Capacity: make(map[resourceapi.QualifiedName]resourceapi.DeviceCapacity),
-				},
-			}
-			devicesByNuma[numaNode] = append(devicesByNuma[numaNode], cpuDevice)
-		}
-
 		// Create one resource slice per NUMA node.
 		var allSlices [][]resourceapi.Device
-		// Sort NUMA node IDs to ensure deterministic slice ordering.
+
+		// Sort NUMA node IDs to ensure a deterministic slice ordering.
 		numaNodeIDs := make([]int, 0, len(devicesByNuma))
 		for id := range devicesByNuma {
 			numaNodeIDs = append(numaNodeIDs, int(id))
@@ -115,7 +108,6 @@ func CreateCPUDeviceSlices() [][]resourceapi.Device {
 			// If devices per NUMA node exceeds the limit, throw an error.
 			if len(numaDevices) > maxDevicesPerSlice {
 				klog.Errorf("number of devices for NUMA node %d (%d) exceeds the slice limit of %d", id, len(numaDevices), maxDevicesPerSlice)
-				// Returning nil indicates a configuration error that prevents publishing.
 				return nil
 			}
 			if len(numaDevices) > 0 {
