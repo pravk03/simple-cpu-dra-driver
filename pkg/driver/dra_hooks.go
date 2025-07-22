@@ -20,8 +20,6 @@ import (
 	"context"
 	"fmt"
 	"sort"
-	"strconv"
-	"strings"
 
 	"github.com/pravk03/dracpu/pkg/cpuinfo"
 	resourceapi "k8s.io/api/resource/v1beta1"
@@ -35,41 +33,84 @@ import (
 
 const maxDevicesPerSlice = 128
 
-func CreateCPUDeviceSlices() [][]resourceapi.Device {
-	cpuInfo, err := cpuinfo.GetCPUInfos()
+// When true, hyperthreads of the same physical core are assigned consecutive device IDs.
+// This allows the DRA scheduler, which requests resources in contiguous blocks, to co-locate workloads on hyperthreads of the same core.
+const setConsecutiveDeviceIdToHyperthreads = true
+
+func (cp *CPUDriver) CreateCPUDeviceSlices() [][]resourceapi.Device {
+	cpus, err := cpuinfo.GetCPUInfos()
 	if err != nil {
 		klog.Errorf("error getting CPU topology: %v", err)
 		return nil
 	}
 
-	devicesByNuma := make(map[int64][]resourceapi.Device)
-	for _, cpu := range cpuInfo {
-		numaNode := int64(cpu.NumaNode)
-		l3CacheID := int64(cpu.L3CacheId)
-		socketID := int64(cpu.SocketId)
-		// cpuIDint64 := int64(cpu.CpuId)
-		// coreIDint64 := int64(cpu.CoreId)
-		cpuDevice := resourceapi.Device{
-			Name: fmt.Sprintf("cpu%d", cpu.CpuId),
-			Basic: &resourceapi.BasicDevice{
-				Attributes: map[resourceapi.QualifiedName]resourceapi.DeviceAttribute{
-					"numaNode":  {IntValue: &numaNode},
-					"l3CacheID": {IntValue: &l3CacheID},
-					"coreType":  {StringValue: &cpu.CoreType},
-					"socketID":  {IntValue: &socketID},
-					// TODO(pravk03): Remove. Hack to allign with NIC (DRANet). We need some standard attribute to allign other resources with CPU.
-					"dra.net/numaNode": {IntValue: &numaNode},
-					// "cpuID":            {IntValue: &cpuIDint64},
-					// "coreID":           {IntValue: &coreIDint64},
-					// "numaAffinityMask": {StringValue: &cpu.NumaNodeAffinityMask},
-				},
-				Capacity: make(map[resourceapi.QualifiedName]resourceapi.DeviceCapacity),
-			},
+	processedCpus := make(map[int]bool)
+	var coreGroups [][]cpuinfo.CPUInfo
+	if setConsecutiveDeviceIdToHyperthreads {
+
+		cpuInfoMap := make(map[int]cpuinfo.CPUInfo)
+		for _, info := range cpus {
+			cpuInfoMap[info.CpuID] = info
 		}
-		devicesByNuma[numaNode] = append(devicesByNuma[numaNode], cpuDevice)
+
+		for _, cpu := range cpus {
+			if processedCpus[cpu.CpuID] {
+				continue
+			}
+			if cpu.SiblingCpuID != -1 {
+				coreGroups = append(coreGroups, []cpuinfo.CPUInfo{cpu, cpuInfoMap[cpu.SiblingCpuID]})
+				processedCpus[cpu.CpuID] = true
+				processedCpus[cpu.SiblingCpuID] = true
+			} else {
+				coreGroups = append(coreGroups, []cpuinfo.CPUInfo{cpu})
+				processedCpus[cpu.CpuID] = true
+			}
+		}
+	} else {
+		for _, cpu := range cpus {
+			coreGroups = append(coreGroups, []cpuinfo.CPUInfo{cpu})
+		}
 	}
 
-	numDevices := len(cpuInfo)
+	sort.Slice(coreGroups, func(i, j int) bool {
+		return coreGroups[i][0].CpuID < coreGroups[j][0].CpuID
+	})
+
+	devId := 0
+	devicesByNuma := make(map[int64][]resourceapi.Device)
+	for _, group := range coreGroups {
+		for _, cpu := range group {
+			numaNode := int64(cpu.NumaNode)
+			l3CacheID := int64(cpu.L3CacheID)
+			socketID := int64(cpu.SocketID)
+			// cpuIDint64 := int64(cpu.CpuId)
+			// coreIDint64 := int64(cpu.CoreId)
+			deviceName := fmt.Sprintf("cpudev%d", devId)
+			devId++
+			cp.cpuIDToDeviceName[cpu.CpuID] = deviceName
+			cp.deviceNameToCPUID[deviceName] = cpu.CpuID
+			cpuDevice := resourceapi.Device{
+				Name: deviceName,
+				Basic: &resourceapi.BasicDevice{
+					Attributes: map[resourceapi.QualifiedName]resourceapi.DeviceAttribute{
+						"numaNode":  {IntValue: &numaNode},
+						"l3CacheID": {IntValue: &l3CacheID},
+						"coreType":  {StringValue: &cpu.CoreType},
+						"socketID":  {IntValue: &socketID},
+						// TODO(pravk03): Remove. Hack to allign with NIC (DRANet). We need some standard attribute to allign other resources with CPU.
+						"dra.net/numaNode": {IntValue: &numaNode},
+						// "cpuID":            {IntValue: &cpuIDint64},
+						// "coreID":           {IntValue: &coreIDint64},
+						// "numaAffinityMask": {StringValue: &cpu.NumaNodeAffinityMask},
+					},
+					Capacity: make(map[resourceapi.QualifiedName]resourceapi.DeviceCapacity),
+				},
+			}
+			devicesByNuma[numaNode] = append(devicesByNuma[numaNode], cpuDevice)
+		}
+	}
+
+	numDevices := len(cpus)
 	if numDevices <= maxDevicesPerSlice {
 		klog.Infof("Total devices (%d) is within limit (%d), creating a single resource slice.", numDevices, maxDevicesPerSlice)
 		var allDevices []resourceapi.Device
@@ -121,7 +162,7 @@ func CreateCPUDeviceSlices() [][]resourceapi.Device {
 func (cp *CPUDriver) PublishResources(ctx context.Context) {
 	klog.Infof("Publishing resources")
 
-	deviceChunks := CreateCPUDeviceSlices()
+	deviceChunks := cp.CreateCPUDeviceSlices()
 	if deviceChunks == nil {
 		klog.Infof("No devices to publish or error occurred.")
 		return
@@ -172,10 +213,10 @@ func (cp *CPUDriver) prepareResourceClaim(_ context.Context, claim *resourceapi.
 		if alloc.Driver != cp.driverName {
 			continue
 		}
-		cpuID, err := strconv.Atoi(strings.TrimPrefix(alloc.Device, "cpu"))
-		if err != nil {
+		cpuID, ok := cp.deviceNameToCPUID[alloc.Device]
+		if !ok {
 			return kubeletplugin.PrepareResult{
-				Err: fmt.Errorf("error parsing CPU ID from device %q for claim %s: %w", alloc.Device, claim.Name, err),
+				Err: fmt.Errorf("device %q not found in device to CPU ID map", alloc.Device),
 			}
 		}
 		claimCPUIDs = append(claimCPUIDs, cpuID)

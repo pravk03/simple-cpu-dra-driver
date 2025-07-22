@@ -44,7 +44,7 @@ func NewPodConfigStore() *PodConfigStore {
 		klog.Fatalf("Fatal error getting CPU topology: %v", err)
 	}
 	for _, cpu := range cpuInfo {
-		cpuIDs = append(cpuIDs, cpu.CpuId)
+		cpuIDs = append(cpuIDs, cpu.CpuID)
 	}
 
 	allCPUsSet := cpuset.New(cpuIDs...)
