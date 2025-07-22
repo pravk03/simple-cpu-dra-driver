@@ -1,0 +1,9 @@
+apiVersion: v1
+kind: Pod
+metadata:
+  name: best-effort-pod
+spec:
+  nodeName: gke-cpudratest-pkrishn-cpudratest-a3-292fee03-4jcm
+  containers:
+    - name: container1
+      image: "registry.k8s.io/pause:3.9"

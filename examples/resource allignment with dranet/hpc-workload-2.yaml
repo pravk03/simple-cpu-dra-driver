@@ -1,0 +1,18 @@
+apiVersion: v1
+kind: Pod
+metadata:
+  name: hpc-workload-2
+spec:
+  containers:
+    - name: container1
+      image: "registry.k8s.io/pause:3.9"
+      resources:
+        requests:
+          cpu: "4"
+        limits:
+          cpu: "4"
+        claims:
+          - name: "container1-claim"
+  resourceClaims:
+    - name: "container1-claim"
+      resourceClaimName: resourceclaim-2nic-4cpu

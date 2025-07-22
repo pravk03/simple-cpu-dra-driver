@@ -1,0 +1,21 @@
+apiVersion: resource.k8s.io/v1beta1
+kind: ResourceClaim
+metadata:
+  name: resourceclaim-3nic-8cpu
+spec:
+  devices:
+    requests:
+      - name: req-nic
+        deviceClassName: dra.net
+        count: 3
+        selectors:
+          - cel:
+              # This expression selects devices where the 'rdma' attribute is true.
+              expression: device.attributes["dra.net"].rdma == true
+      - name: req-cpu
+        deviceClassName: dra.cpu 
+        count: 8
+    constraints:
+    - matchAttribute: 'dra.net/numaNode'
+
+    
