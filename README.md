@@ -1,68 +1,99 @@
 # simple-cpu-dra-driver
 
-> **⚠️ Proof of Concept: This driver is in the very early stages of development.**
+> **⚠️ Proof of Concept: This driver is in the very early stages of
+> development.**
 >
-> This project is a **Proof of Concept (POC)** and is not suitable for production use. It is under active development, and the code should be considered experimental.
+> This project is a **Proof of Concept (POC)** and is not suitable for
+> production use. It is under active development, and the code should be
+> considered experimental.
 >
-> * There are currently **no unit or end-to-end tests**.
-> * The code may contain **bugs and breaking changes** may be introduced frequently.
+> - There are currently **no unit or end-to-end tests**.
+> - The code may contain **bugs and breaking changes** may be introduced
+>   frequently.
 
 ## Overview
 
-The `simple-cpu-dra-driver` is a Kubernetes [Dynamic Resource Allocation (DRA)](https://kubernetes.io/docs/concepts/scheduling-eviction/dynamic-resource-allocation/) driver that enables CPU pinning for workloads using DRA framework. This project uses a combination of a DRA driver and an NRI (Node Resource Interface) plugin to manage CPU allocations. It ensures that high-priority pods requesting exclusive CPUs through Resource Claim get them, while also managing the remaining CPUs for shared (BestEffort) pods.
+The `simple-cpu-dra-driver` is a Kubernetes
+[Dynamic Resource Allocation (DRA)](https://kubernetes.io/docs/concepts/scheduling-eviction/dynamic-resource-allocation/)
+driver that enables CPU pinning for workloads using DRA framework. This project
+uses a combination of a DRA driver and an NRI (Node Resource Interface) plugin
+to manage CPU allocations. It ensures that high-priority pods requesting
+exclusive CPUs through Resource Claim get them, while also managing the
+remaining CPUs for shared (BestEffort) pods.
 
-This implements the proposal from the [feasability doc](https://docs.google.com/document/d/1Tb_dC60YVCBr7cNYWuVLddUUTMcNoIt3zjd5-8rgug0/edit?tab=t.0#heading=h.iutbebngx80e)
+This implements the proposal from the
+[feasibility doc](https://docs.google.com/document/d/1Tb_dC60YVCBr7cNYWuVLddUUTMcNoIt3zjd5-8rgug0/edit?tab=t.0#heading=h.iutbebngx80e)
 
-## Requirements 
+## Requirements
 
-* Kubernetes Version: v1.33 or higher.
-* Feature Gates: The following feature gates must be enabled in your cluster.
-    * `DynamicResourceAllocation`
-    * `DRAResourceClaimDeviceStatus`
-* Kubelet CPUManager: The Kubelet's default CPUManager policy must be set to none, as this driver takes full responsibility for CPU pinning.
-* Pod Specs: Pods requesting exclusive CPUs via a ResourceClaim should also include standard CPU requests to ensure the Kubernetes scheduler can make correct placement decisions.
+- Kubernetes Version: v1.33 or higher.
+- Feature Gates: The following feature gates must be enabled in your cluster.
+  - `DynamicResourceAllocation`
+  - `DRAResourceClaimDeviceStatus`
+- Kubelet CPUManager: The Kubelet's default CPUManager policy must be set to
+  none, as this driver takes full responsibility for CPU pinning.
+- Pod Specs: Pods requesting exclusive CPUs via a ResourceClaim should also
+  include standard CPU requests to ensure the Kubernetes scheduler can make
+  correct placement decisions.
 
-## How it Works 
+## How it Works
 
 The driver is deployed as a DaemonSet which contains two core components:
-* DRA driver: The DRA driver is responsible for:
-    *  Discovering available CPUs on the node and reporting them to the scheduler by creating `ResourceSlice` object.
-    *  In the `PrepareResourceClaims` DRA hook, the driver parses allocated CPUs and generates a CDI file for that claim. This information is used by the NRI plugin for actuation.
-* NRI Plugin: In the `CreateContainer` hook, the NRI plugin reads the CPU assignments for the container specified by the DRA driver and uses them to pin containers to their designated cores. It also ensures that any containers not requesting guaranteed cpu's (containers without any resource claims) are confined to the shared pool of available CPUs.
 
+- DRA driver: The DRA driver is responsible for:
+  - Discovering available CPUs on the node and reporting them to the scheduler
+    by creating `ResourceSlice` object.
+  - In the `PrepareResourceClaims` DRA hook, the driver parses allocated CPUs
+    and generates a CDI file for that claim. This information is used by the NRI
+    plugin for actuation.
+- NRI Plugin: In the `CreateContainer` hook, the NRI plugin reads the CPU
+  assignments for the container specified by the DRA driver and uses them to pin
+  containers to their designated cores. It also ensures that any containers not
+  requesting guaranteed cpu's (containers without any resource claims) are
+  confined to the shared pool of available CPUs.
 
 ## Feature Support
 
 ### Currently Supported
-* Exclusive CPU Allocation: Guaranteed pods that request CPUs via a ResourceClaim are allocated exclusive cores.
-* Shared CPU Pool Management: All other containers without a ResourceClaim are confined to a shared pool of CPUs that are not reserved for Guaranteed pods.
-* Handle daemonset restart. On restart, the driver synchronizes with all existing pods on the node to rebuild its state of CPU allocations, ensuring accurate CPU allocation for newly scheduled pods.
+
+- Exclusive CPU Allocation: Guaranteed pods that request CPUs via a
+  ResourceClaim are allocated exclusive cores.
+- Shared CPU Pool Management: All other containers without a ResourceClaim are
+  confined to a shared pool of CPUs that are not reserved for Guaranteed pods.
+- Handle daemonset restart. On restart, the driver synchronizes with all
+  existing pods on the node to rebuild its state of CPU allocations, ensuring
+  accurate CPU allocation for newly scheduled pods.
 
 ### Not Supported
-* This driver currently only manages CPU resources. Memory allocation and management are not supported.
 
+- This driver currently only manages CPU resources. Memory allocation and
+  management are not supported.
 
 ## Getting Started
 
 ### Installation
 
-* Create a kind cluster 
-    * `kind create cluster --config kind.yaml`
-* Deploy the driver and all necessary RBAC configurations using the provided manifest
-    * `kubectl apply -f install.yaml`
+- Create a kind cluster
+  - `kind create cluster --config kind.yaml`
+- Deploy the driver and all necessary RBAC configurations using the provided
+  manifest
+  - `kubectl apply -f install.yaml`
 
 ### Example Usage
 
-* Create a DeviceClass: This tells Kubernetes how to find the resources provided by this driver.
-    * `kubectl apply -f examples/sample_device_class.yaml`
-* Create a ResourceClaim: This requests a specific number of exclusive CPUs from the driver.
-    * `kubectl apply -f examples/sample_resource_claim.yaml`
-* Create a Pod: Reference the ResourceClaim in your pod spec to receive the allocated CPUs.
-    * `kubectl apply -f examples/sample_pod.yaml`
+- Create a DeviceClass: This tells Kubernetes how to find the resources provided
+  by this driver.
+  - `kubectl apply -f examples/sample_device_class.yaml`
+- Create a ResourceClaim: This requests a specific number of exclusive CPUs from
+  the driver.
+  - `kubectl apply -f examples/sample_resource_claim.yaml`
+- Create a Pod: Reference the ResourceClaim in your pod spec to receive the
+  allocated CPUs.
+  - `kubectl apply -f examples/sample_pod.yaml`
 
 ### Example Driver Artifacts
 
-* ResourceSLice (generated by the driver)
+- ResourceSLice (generated by the driver)
 
 ```
 apiVersion: resource.k8s.io/v1beta2
@@ -163,14 +194,14 @@ spec:
     resourceSliceCount: 1
 ```
 
-* DeviceClass, ResourceClaim objects included in `examples/` dir.
+- DeviceClass, ResourceClaim objects included in `examples/` dir.
 
-* CDI file on the node
+- CDI file on the node
 
 ```
     root@kind-worker:/var/run/cdi# ls
     dra.cpu.json
-    root@kind-worker:/var/run/cdi# cat dra.cpu.json 
+    root@kind-worker:/var/run/cdi# cat dra.cpu.json
     {
     "cdiVersion": "1.0.0",
     "kind": "dra.k8s.io/cpu",
@@ -195,4 +226,3 @@ spec:
     "containerEdits": {}
     }
 ```
-

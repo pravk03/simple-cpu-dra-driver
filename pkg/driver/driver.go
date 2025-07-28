@@ -36,7 +36,6 @@ type CPUDriver struct {
 type Option func(*CPUDriver)
 
 func Start(ctx context.Context, driverName string, kubeClient kubernetes.Interface, nodeName string) (*CPUDriver, error) {
-
 	plugin := &CPUDriver{
 		driverName:        driverName,
 		nodeName:          nodeName,

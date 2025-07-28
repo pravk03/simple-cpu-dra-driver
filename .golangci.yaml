@@ -13,9 +13,8 @@ linters:
     - nilerr
     - unused
     - wastedassign
+    - whitespace
   exclusions:
-    mispell:
-      locale: US
     generated: lax
     presets:
       - comments
@@ -27,6 +26,10 @@ linters:
       - builtin$
       - examples$
 formatters:
+  enable:
+    - gci
+    - gofmt
+    - goimports
   exclusions:
     generated: lax
     paths:

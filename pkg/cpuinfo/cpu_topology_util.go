@@ -41,7 +41,6 @@ type CPUInfo struct {
 }
 
 func GetCPUInfos() ([]CPUInfo, error) {
-
 	filename := HostProc("cpuinfo")
 	lines, err := ReadLines(filename)
 	if err != nil {

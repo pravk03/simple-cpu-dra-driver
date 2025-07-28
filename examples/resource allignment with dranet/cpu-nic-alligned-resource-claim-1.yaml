@@ -13,9 +13,7 @@ spec:
               # This expression selects devices where the 'rdma' attribute is true.
               expression: device.attributes["dra.net"].rdma == true
       - name: req-cpu
-        deviceClassName: dra.cpu 
+        deviceClassName: dra.cpu
         count: 8
     constraints:
     - matchAttribute: 'dra.net/numaNode'
-
-    

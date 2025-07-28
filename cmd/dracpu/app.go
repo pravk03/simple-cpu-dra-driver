@@ -28,9 +28,7 @@ import (
 
 	"github.com/pravk03/dracpu/pkg/driver"
 	"github.com/prometheus/client_golang/prometheus/promhttp"
-
 	"golang.org/x/sys/unix"
-
 	"k8s.io/client-go/kubernetes"
 	"k8s.io/client-go/rest"
 	"k8s.io/client-go/tools/clientcmd"
