@@ -24,9 +24,8 @@ import (
 
 	"github.com/containerd/nri/pkg/api"
 	"k8s.io/apimachinery/pkg/types"
-	"k8s.io/utils/cpuset"
-
 	"k8s.io/klog/v2"
+	"k8s.io/utils/cpuset"
 )
 
 var (
@@ -138,7 +137,7 @@ func (cp *CPUDriver) CreateContainer(_ context.Context, pod *api.PodSandbox, ctr
 		adjust.SetLinuxCPUSetCPUs(guaranteedCPUs.String())
 		cp.podConfigStore.SetContainerState(types.UID(pod.GetUid()), state)
 
-		// Remove the guaranteed CPUs from the contianers with shared CPUs.
+		// Remove the guaranteed CPUs from the containers with shared CPUs.
 		updates = cp.updateSharedContainers()
 		setSharedCPUUpdateRequired(false)
 	}

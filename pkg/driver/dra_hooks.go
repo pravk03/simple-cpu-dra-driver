@@ -47,7 +47,6 @@ func (cp *CPUDriver) CreateCPUDeviceSlices() [][]resourceapi.Device {
 	processedCpus := make(map[int]bool)
 	var coreGroups [][]cpuinfo.CPUInfo
 	if setConsecutiveDeviceIdToHyperthreads {
-
 		cpuInfoMap := make(map[int]cpuinfo.CPUInfo)
 		for _, info := range cpus {
 			cpuInfoMap[info.CpuID] = info
@@ -97,7 +96,7 @@ func (cp *CPUDriver) CreateCPUDeviceSlices() [][]resourceapi.Device {
 						"l3CacheID": {IntValue: &l3CacheID},
 						"coreType":  {StringValue: &cpu.CoreType},
 						"socketID":  {IntValue: &socketID},
-						// TODO(pravk03): Remove. Hack to allign with NIC (DRANet). We need some standard attribute to allign other resources with CPU.
+						// TODO(pravk03): Remove. Hack to align with NIC (DRANet). We need some standard attribute to align other resources with CPU.
 						"dra.net/numaNode": {IntValue: &numaNode},
 						// "cpuID":            {IntValue: &cpuIDint64},
 						// "coreID":           {IntValue: &coreIDint64},
@@ -131,7 +130,6 @@ func (cp *CPUDriver) CreateCPUDeviceSlices() [][]resourceapi.Device {
 			return nil
 		}
 		return [][]resourceapi.Device{allDevices}
-
 	} else {
 		klog.Infof("Total devices (%d) exceeds limit (%d), creating one resource slice per NUMA node.", numDevices, maxDevicesPerSlice)
 		// Create one resource slice per NUMA node.
@@ -265,7 +263,7 @@ func (np *CPUDriver) UnprepareResourceClaims(ctx context.Context, claims []kubel
 		err := np.unprepareResourceClaim(ctx, claim)
 		result[claim.UID] = err
 		if err != nil {
-			klog.Infof("error unpreparing ressources for claim %s/%s : %v", claim.Namespace, claim.Name, err)
+			klog.Infof("error unpreparing resources for claim %s/%s : %v", claim.Namespace, claim.Name, err)
 		}
 	}
 	return result, nil
