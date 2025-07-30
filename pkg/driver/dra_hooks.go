@@ -37,6 +37,7 @@ const maxDevicesPerSlice = 128
 // This allows the DRA scheduler, which requests resources in contiguous blocks, to co-locate workloads on hyperthreads of the same core.
 const setConsecutiveDeviceIdToHyperthreads = true
 
+// CreateCPUDeviceSlices creates Device objects based on the CPU topology.
 func (cp *CPUDriver) CreateCPUDeviceSlices() [][]resourceapi.Device {
 	cpus, err := cpuinfo.GetCPUInfos()
 	if err != nil {
@@ -152,6 +153,7 @@ func (cp *CPUDriver) CreateCPUDeviceSlices() [][]resourceapi.Device {
 	}
 }
 
+// PublishResources publishes ResourceSlice for CPU resources.
 func (cp *CPUDriver) PublishResources(ctx context.Context) {
 	klog.Infof("Publishing resources")
 
@@ -179,6 +181,7 @@ func (cp *CPUDriver) PublishResources(ctx context.Context) {
 	}
 }
 
+// PrepareResourceClaims is called by the kubelet to prepare a resource claim.
 func (cp *CPUDriver) PrepareResourceClaims(ctx context.Context, claims []*resourceapi.ResourceClaim) (map[types.UID]kubeletplugin.PrepareResult, error) {
 	klog.Infof("PrepareResourceClaims is called: number of claims: %d", len(claims))
 
@@ -244,6 +247,7 @@ func (cp *CPUDriver) prepareResourceClaim(_ context.Context, claim *resourceapi.
 	}
 }
 
+// UnprepareResourceClaims is called by the kubelet to unprepare the resources for a claim.
 func (np *CPUDriver) UnprepareResourceClaims(ctx context.Context, claims []kubeletplugin.NamespacedObject) (map[types.UID]error, error) {
 	klog.Infof("UnprepareResourceClaims is called: number of claims: %d", len(claims))
 

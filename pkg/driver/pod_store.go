@@ -5,7 +5,7 @@ Licensed under the Apache License, Version 2.0 (the "License");
 you may not use this file except in compliance with the License.
 You may obtain a copy of the License at
 
-    http://www.apache.org/licenses/LICENSE-2.0
+	http://www.apache.org/licenses/LICENSE-2.0
 
 Unless required by applicable law or agreed to in writing, software
 distributed under the License is distributed on an "AS IS" BASIS,
@@ -13,7 +13,6 @@ WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
 See the License for the specific language governing permissions and
 limitations under the License.
 */
-
 package driver
 
 import (
@@ -29,16 +28,18 @@ import (
 type CPUType string
 
 const (
+	// CPUTypeGuaranteed is for containers with guaranteed CPU allocation.
 	CPUTypeGuaranteed CPUType = "Guaranteed"
-	CPUTypeShared     CPUType = "Shared"
+	// CPUTypeShared is for containers with shared CPU allocation.
+	CPUTypeShared CPUType = "Shared"
 )
 
 // ContainerCPUState holds the CPU allocation type and all claim assignments for a container.
 type ContainerCPUState struct {
-	Type          CPUType
-	ContainerName string
-	ContainerUID  types.UID
-	// valid only when Type is CPUTypeGuaranteed
+	cpuType       CPUType
+	containerName string
+	containerUID  types.UID
+	// updated if cpuType is CPUTypeGuaranteed
 	guaranteedCPUs cpuset.CPUSet
 }
 
@@ -53,6 +54,7 @@ type PodConfigStore struct {
 	publicCPUs cpuset.CPUSet
 }
 
+// NewPodConfigStore creates a new PodConfigStore.
 func NewPodConfigStore() *PodConfigStore {
 	cpuIDs := []int{}
 	cpuInfo, err := cpuinfo.GetCPUInfos()
@@ -82,17 +84,17 @@ func (s *PodConfigStore) SetContainerState(podUID types.UID, state *ContainerCPU
 	}
 
 	// Use the container name from the state object as the map key.
-	s.configs[podUID][state.ContainerName] = state
+	s.configs[podUID][state.containerName] = state
 
-	if state.Type == CPUTypeGuaranteed {
+	if state.cpuType == CPUTypeGuaranteed {
 		// Recalculate public CPUs after any change that could affect guaranteed CPUs.
 		s.recalculatePublicCPUs()
 	}
 
-	if state.Type == CPUTypeGuaranteed {
-		klog.Infof("Set Guaranteed CPUs for PodUID:%v Container:%s guaranteedCPUs:%v", podUID, state.ContainerName, state.guaranteedCPUs.String())
+	if state.cpuType == CPUTypeGuaranteed {
+		klog.Infof("Set Guaranteed CPUs for PodUID:%v Container:%s guaranteedCPUs:%v", podUID, state.containerName, state.guaranteedCPUs.String())
 	} else {
-		klog.Infof("Set PodUID:%v Container:%s to Shared", podUID, state.ContainerName)
+		klog.Infof("Set PodUID:%v Container:%s to Shared", podUID, state.containerName)
 	}
 }
 
@@ -120,12 +122,13 @@ func (s *PodConfigStore) RemoveContainerState(podUID types.UID, containerName st
 	}
 
 	// If a guaranteed container was removed, its CPUs must be returned to the public pool.
-	if state.Type == CPUTypeGuaranteed {
+	if state.cpuType == CPUTypeGuaranteed {
 		s.recalculatePublicCPUs()
 		klog.Infof("Recalculated public CPUs after removing guaranteed container.")
 	}
 }
 
+// GetContainersWithSharedCPUs returns a list of container UIDs that have shared CPU allocation.
 // TODO(pravk03): Cache this and return in O(1).
 func (s *PodConfigStore) GetContainersWithSharedCPUs() []types.UID {
 	s.mu.RLock()
@@ -133,8 +136,8 @@ func (s *PodConfigStore) GetContainersWithSharedCPUs() []types.UID {
 	sharedCPUContainers := []types.UID{}
 	for _, podAssignments := range s.configs {
 		for _, state := range podAssignments {
-			if state.Type == CPUTypeShared {
-				sharedCPUContainers = append(sharedCPUContainers, state.ContainerUID)
+			if state.cpuType == CPUTypeShared {
+				sharedCPUContainers = append(sharedCPUContainers, state.containerUID)
 			}
 		}
 	}
@@ -157,7 +160,7 @@ func (s *PodConfigStore) IsContainerGuaranteed(podUID types.UID, containerName s
 		klog.Warningf("Container %s not found in Pod %v in PodConfigStore", containerName, podUID)
 		return false
 	}
-	return containerState.Type == CPUTypeGuaranteed
+	return containerState.cpuType == CPUTypeGuaranteed
 }
 
 // IsPodGuaranteed checks if any container in the pod has a guaranteed CPU allocation.
@@ -171,7 +174,7 @@ func (s *PodConfigStore) IsPodGuaranteed(podUID types.UID) bool {
 	}
 
 	for _, state := range podAssignments {
-		if state.Type == CPUTypeGuaranteed {
+		if state.cpuType == CPUTypeGuaranteed {
 			return true
 		}
 	}
@@ -190,7 +193,7 @@ func (s *PodConfigStore) recalculatePublicCPUs() {
 	guaranteedCPUs := cpuset.New()
 	for _, podAssignments := range s.configs {
 		for _, state := range podAssignments {
-			if state.Type == CPUTypeGuaranteed {
+			if state.cpuType == CPUTypeGuaranteed {
 				guaranteedCPUs = guaranteedCPUs.Union(state.guaranteedCPUs)
 			}
 		}
@@ -198,6 +201,7 @@ func (s *PodConfigStore) recalculatePublicCPUs() {
 	s.publicCPUs = s.allCPUs.Difference(guaranteedCPUs)
 }
 
+// DeletePodState removes a pod's state from the store.
 func (s *PodConfigStore) DeletePodState(podUID types.UID) {
 	s.mu.Lock()
 	defer s.mu.Unlock()
@@ -206,7 +210,7 @@ func (s *PodConfigStore) DeletePodState(podUID types.UID) {
 	}
 	recalculatePublicCPUs := false
 	for _, state := range s.configs[podUID] {
-		if state.Type == CPUTypeGuaranteed {
+		if state.cpuType == CPUTypeGuaranteed {
 			recalculatePublicCPUs = true
 			break
 		}

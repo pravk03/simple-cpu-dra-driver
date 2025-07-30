@@ -27,6 +27,7 @@ import (
 	"k8s.io/utils/cpuset"
 )
 
+// CPUInfo holds information about a single CPU.
 type CPUInfo struct {
 	// CpuID is the enumerated CPU ID
 	CpuID int `json:"cpuID"`
@@ -53,14 +54,15 @@ type CPUInfo struct {
 	L3CacheID int64 `json:"l3CacheID"`
 }
 
+// GetCPUInfos returns a slice of CPUInfo structs, one for each logical CPU.
 func GetCPUInfos() ([]CPUInfo, error) {
-	filename := HostProc("cpuinfo")
+	filename := hostProc("cpuinfo")
 	lines, err := ReadLines(filename)
 	if err != nil {
 		return []CPUInfo{}, err
 	}
 
-	eCoreFilename := HostSys("devices/cpu_atom/cpus")
+	eCoreFilename := hostSys("devices/cpu_atom/cpus")
 	eCoreLines, err := ReadLines(eCoreFilename)
 	var eCoreCpus cpuset.CPUSet
 	if err == nil {
@@ -149,7 +151,7 @@ func populateL3CacheIDs(cpuInfos []CPUInfo) error {
 			continue
 		}
 
-		cachePath := HostSys(fmt.Sprintf("devices/system/cpu/cpu%d/cache", cpuInfos[i].CpuID))
+		cachePath := hostSys(fmt.Sprintf("devices/system/cpu/cpu%d/cache", cpuInfos[i].CpuID))
 		entries, err := os.ReadDir(cachePath)
 		if err != nil {
 			return fmt.Errorf("could not read cache dir %s: %w", cachePath, err)
@@ -210,7 +212,7 @@ func populateTopologyInfo(cpuInfos []CPUInfo) error {
 		cpuID := cpuInfos[i].CpuID
 
 		// Get Socket ID from sysfs (most reliable source)
-		socketPath := HostSys(fmt.Sprintf("devices/system/cpu/cpu%d/topology/physical_package_id", cpuID))
+		socketPath := hostSys(fmt.Sprintf("devices/system/cpu/cpu%d/topology/physical_package_id", cpuID))
 		socketStr, err := ReadFile(socketPath)
 		if err != nil {
 			// If sysfs fails for some reason, we keep the value from /proc/cpuinfo
@@ -222,7 +224,7 @@ func populateTopologyInfo(cpuInfos []CPUInfo) error {
 		}
 
 		// Get NUMA Node ID from sysfs
-		nodePath := HostSys(fmt.Sprintf("devices/system/cpu/cpu%d", cpuID))
+		nodePath := hostSys(fmt.Sprintf("devices/system/cpu/cpu%d", cpuID))
 		files, err := os.ReadDir(nodePath)
 		if err != nil {
 			return fmt.Errorf("could not read cpu dir %s: %w", nodePath, err)
@@ -241,7 +243,7 @@ func populateTopologyInfo(cpuInfos []CPUInfo) error {
 				//  Get NUMA Affinity Mask (from cache if possible)
 				mask, ok := numaMaskCache[int(nodeID)]
 				if !ok {
-					maskPath := HostSys(fmt.Sprintf("devices/system/node/node%d/cpumap", nodeID))
+					maskPath := hostSys(fmt.Sprintf("devices/system/node/node%d/cpumap", nodeID))
 					maskLines, err := ReadLines(maskPath)
 					if err != nil {
 						return err
@@ -329,16 +331,16 @@ func ReadLines(filename string) ([]string, error) {
 	return lines, nil
 }
 
-func HostRoot(combineWith ...string) string {
+func hostRoot(combineWith ...string) string {
 	return GetEnv("HOST_ROOT", "/", combineWith...)
 }
 
-func HostProc(combineWith ...string) string {
-	return HostRoot(combinePath("proc", combineWith...))
+func hostProc(combineWith ...string) string {
+	return hostRoot(combinePath("proc", combineWith...))
 }
 
-func HostSys(combineWith ...string) string {
-	return HostRoot(combinePath("sys", combineWith...))
+func hostSys(combineWith ...string) string {
+	return hostRoot(combinePath("sys", combineWith...))
 }
 
 // GetEnv retrieves the environment variable key, or uses the default value.

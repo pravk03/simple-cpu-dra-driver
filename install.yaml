@@ -131,7 +131,7 @@ spec:
         args:
         - /dracpu
         - --v=4
-        image: gcr.io/gke-networking-test-images/dracputest:stable
+        image: ghcr.io/pravk03/dracputest:latest
         imagePullPolicy: Always
         resources:
           requests:

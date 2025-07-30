@@ -37,6 +37,7 @@ const (
 	maxAttempts = 5
 )
 
+// CPUDriver is the structure that holds all the driver runtime information.
 type CPUDriver struct {
 	driverName        string
 	nodeName          string
@@ -49,8 +50,7 @@ type CPUDriver struct {
 	deviceNameToCPUID map[string]int
 }
 
-type Option func(*CPUDriver)
-
+// Start creates and starts a new CPUDriver.
 func Start(ctx context.Context, driverName string, kubeClient kubernetes.Interface, nodeName string) (*CPUDriver, error) {
 	plugin := &CPUDriver{
 		driverName:        driverName,
@@ -131,11 +131,13 @@ func Start(ctx context.Context, driverName string, kubeClient kubernetes.Interfa
 	return plugin, nil
 }
 
+// Stop stops the CPUDriver.
 func (cp *CPUDriver) Stop() {
 	cp.nriPlugin.Stop()
 	cp.draPlugin.Stop()
 }
 
+// Shutdown is called when the runtime is shutting down.
 func (cp *CPUDriver) Shutdown(_ context.Context) {
 	klog.Info("Runtime shutting down...")
 }

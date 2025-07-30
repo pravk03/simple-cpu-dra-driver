@@ -33,6 +33,7 @@ var (
 	sharedCPUUpdateRequired bool
 )
 
+// Synchronize is called by the NRI to synchronize the state of the driver during bootstrap.
 func (cp *CPUDriver) Synchronize(ctx context.Context, pods []*api.PodSandbox, containers []*api.Container) ([]*api.ContainerUpdate, error) {
 	klog.Infof("Synchronized state with the runtime (%d pods, %d containers)...",
 		len(pods), len(containers))
@@ -49,16 +50,16 @@ func (cp *CPUDriver) Synchronize(ctx context.Context, pods []*api.PodSandbox, co
 			}
 
 			state := &ContainerCPUState{
-				ContainerName: container.GetName(),
-				ContainerUID:  types.UID(container.GetId()),
+				containerName: container.GetName(),
+				containerUID:  types.UID(container.GetId()),
 			}
 
 			if guaranteedCPUs.IsEmpty() {
 				klog.Infof("Synchronize(): No guaranteed CPUs found in DRA env for pod %s/%s container %s", pod.Namespace, pod.Name, container.Name)
-				state.Type = CPUTypeShared
+				state.cpuType = CPUTypeShared
 			} else {
 				klog.Infof("Synchronize(): Guaranteed CPUs found for pod %s/%s container %s with cpus: %v", pod.Namespace, pod.Name, container.Name, guaranteedCPUs.String())
-				state.Type = CPUTypeGuaranteed
+				state.cpuType = CPUTypeGuaranteed
 				state.guaranteedCPUs = guaranteedCPUs
 			}
 			cp.podConfigStore.SetContainerState(types.UID(pod.GetUid()), state)
@@ -108,7 +109,7 @@ func (cp *CPUDriver) updateSharedContainers() []*api.ContainerUpdate {
 	return updates
 }
 
-// CreateContainer handles container creation requests.
+// CreateContainer handles container creation requests from the NRI.
 func (cp *CPUDriver) CreateContainer(_ context.Context, pod *api.PodSandbox, ctr *api.Container) (*api.ContainerAdjustment, []*api.ContainerUpdate, error) {
 	klog.Infof("CreateContainer Pod:%s/%s PodUID:%s Container:%s ContainerID:%s", pod.Namespace, pod.Name, pod.Uid, ctr.Name, ctr.Id)
 	adjust := &api.ContainerAdjustment{}
@@ -120,18 +121,18 @@ func (cp *CPUDriver) CreateContainer(_ context.Context, pod *api.PodSandbox, ctr
 	}
 
 	state := &ContainerCPUState{
-		ContainerName: ctr.GetName(),
-		ContainerUID:  types.UID(ctr.GetId()),
+		containerName: ctr.GetName(),
+		containerUID:  types.UID(ctr.GetId()),
 	}
 
 	if guaranteedCPUs.IsEmpty() {
-		state.Type = CPUTypeShared
+		state.cpuType = CPUTypeShared
 		publicCPUs := cp.podConfigStore.GetPublicCPUs()
 		klog.Infof("No guaranteed CPUs found in DRA env for pod %s/%s container %s. Using public CPUs %s", pod.Namespace, pod.Name, ctr.Name, publicCPUs.String())
 		adjust.SetLinuxCPUSetCPUs(publicCPUs.String())
 		cp.podConfigStore.SetContainerState(types.UID(pod.GetUid()), state)
 	} else {
-		state.Type = CPUTypeGuaranteed
+		state.cpuType = CPUTypeGuaranteed
 		state.guaranteedCPUs = guaranteedCPUs
 		klog.Infof("Guaranteed CPUs found for pod:%s container:%s with cpus:%v", pod.Name, ctr.Name, guaranteedCPUs.String())
 		adjust.SetLinuxCPUSetCPUs(guaranteedCPUs.String())
@@ -162,6 +163,7 @@ func isSharedCPUUpdateRequired() bool {
 	return sharedCPUUpdateRequired
 }
 
+// RemoveContainer handles container removal requests from the NRI.
 func (cp *CPUDriver) RemoveContainer(_ context.Context, pod *api.PodSandbox, ctr *api.Container) error {
 	klog.Infof("RemoveContainer Pod:%s/%s PodUID:%s Container:%s ContainerID:%s", pod.Namespace, pod.Name, pod.Uid, ctr.Name, ctr.Id)
 	// TODO(pravk03): If a container with guaranteed CPUs is removed, we need to update the CPU assignment of other containers with shared CPUs.
@@ -173,16 +175,19 @@ func (cp *CPUDriver) RemoveContainer(_ context.Context, pod *api.PodSandbox, ctr
 	return nil
 }
 
+// RunPodSandbox handles pod sandbox creation requests from the NRI.
 func (cp *CPUDriver) RunPodSandbox(_ context.Context, pod *api.PodSandbox) error {
 	klog.Infof("RunPodSandbox Pod %s/%s UID %s", pod.Namespace, pod.Name, pod.Uid)
 	return nil
 }
 
+// StopPodSandbox handles pod sandbox stop requests from the NRI.
 func (cp *CPUDriver) StopPodSandbox(_ context.Context, pod *api.PodSandbox) error {
 	klog.Infof("StopPodSandbox Pod %s/%s UID %s", pod.Namespace, pod.Name, pod.Uid)
 	return nil
 }
 
+// RemovePodSandbox handles pod sandbox removal requests from the NRI.
 func (cp *CPUDriver) RemovePodSandbox(_ context.Context, pod *api.PodSandbox) error {
 	klog.Infof("RemovePodSandbox Pod %s/%s UID %s", pod.Namespace, pod.Name, pod.Uid)
 	// TODO(pravk03): If a pod with guaranteed CPUs is removed, we need to update the CPU assignment of other containers with shared CPUs.
