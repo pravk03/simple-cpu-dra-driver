@@ -52,6 +52,7 @@ REGISTRY?=ghcr.io/pravk03
 TAG?=$(shell echo "$$(date +v%Y%m%d)-$$(git describe --always --dirty)")
 # the full image tag
 IMAGE?=$(REGISTRY)/$(IMAGE_NAME):$(TAG)
+IMAGE_LATEST?=$(REGISTRY)/$(IMAGE_NAME):latest
 PLATFORMS?=linux/arm64
 
 # required to enable buildx
@@ -63,12 +64,12 @@ image: ## docker build load
 image-build: ## build image
 	docker buildx build . \
 		--platform="${PLATFORMS}" \
-		--tag="${IMAGE}"
+		--tag="${IMAGE}" \
+		--tag="${IMAGE_LATEST}"
 
-push-image: image ## build and push image
-	docker tag ${IMAGE} ghcr.io/pravk03/simple-cpu-dra-driver:latest
+push-image: image-build ## build and push image
 	docker push ${IMAGE}
-	docker push ghcr.io/pravk03/simple-cpu-dra-driver:latest
+	docker push ${IMAGE_LATEST}
 
 kind-cluster:  ## create kind cluster
 	kind create cluster --name cpudratest --config kind.yaml
