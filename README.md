@@ -1,16 +1,5 @@
 # simple-cpu-dra-driver
 
-> **⚠️ Proof of Concept: This driver is in the very early stages of
-> development.**
->
-> This project is a **Proof of Concept (POC)** and is not suitable for
-> production use. It is under active development, and the code should be
-> considered experimental.
->
-> - There are currently **no unit or end-to-end tests**.
-> - The code may contain **bugs and breaking changes** may be introduced
->   frequently.
-
 ## Overview
 
 The `simple-cpu-dra-driver` is a Kubernetes

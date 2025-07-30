@@ -82,8 +82,6 @@ func (cp *CPUDriver) CreateCPUDeviceSlices() [][]resourceapi.Device {
 			numaNode := int64(cpu.NumaNode)
 			l3CacheID := int64(cpu.L3CacheID)
 			socketID := int64(cpu.SocketID)
-			// cpuIDint64 := int64(cpu.CpuId)
-			// coreIDint64 := int64(cpu.CoreId)
 			deviceName := fmt.Sprintf("cpudev%d", devId)
 			devId++
 			cp.cpuIDToDeviceName[cpu.CpuID] = deviceName
@@ -92,15 +90,12 @@ func (cp *CPUDriver) CreateCPUDeviceSlices() [][]resourceapi.Device {
 				Name: deviceName,
 				Basic: &resourceapi.BasicDevice{
 					Attributes: map[resourceapi.QualifiedName]resourceapi.DeviceAttribute{
-						"numaNode":  {IntValue: &numaNode},
-						"l3CacheID": {IntValue: &l3CacheID},
-						"coreType":  {StringValue: &cpu.CoreType},
-						"socketID":  {IntValue: &socketID},
+						"dra.cpu/numaNode":  {IntValue: &numaNode},
+						"dra.cpu/l3CacheID": {IntValue: &l3CacheID},
+						"dra.cpu/coreType":  {StringValue: &cpu.CoreType},
+						"dra.cpu/socketID":  {IntValue: &socketID},
 						// TODO(pravk03): Remove. Hack to align with NIC (DRANet). We need some standard attribute to align other resources with CPU.
 						"dra.net/numaNode": {IntValue: &numaNode},
-						// "cpuID":            {IntValue: &cpuIDint64},
-						// "coreID":           {IntValue: &coreIDint64},
-						// "numaAffinityMask": {StringValue: &cpu.NumaNodeAffinityMask},
 					},
 					Capacity: make(map[resourceapi.QualifiedName]resourceapi.DeviceCapacity),
 				},
