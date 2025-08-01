@@ -29,12 +29,22 @@ This implements the proposal from the
 
 The driver is deployed as a DaemonSet which contains two core components:
 
-*   **DRA driver**: This component is responsible for discovering the CPU topology of the node and reporting the available CPUs as allocatable resources to the Kubernetes scheduler by creating `ResourceSlice` objects. When a resource claim is allocated, the driver generates a CDI (Container Device Interface) specification that tells the container runtime to inject an environment variable with the assigned CPU set into the container.
+- **DRA driver**: This component is responsible for discovering the CPU topology
+  of the node and reporting the available CPUs as allocatable resources to the
+  Kubernetes scheduler by creating `ResourceSlice` objects. When a resource
+  claim is allocated, the driver generates a CDI (Container Device Interface)
+  specification that tells the container runtime to inject an environment
+  variable with the assigned CPU set into the container.
 
-*   **NRI Plugin**: This component integrates with the container runtime via the Node Resource Interface (NRI).
-    *   For containers with **guaranteed CPUs**, the plugin reads the environment variable injected via CDI and pins the container to its exclusive CPU set.
-    *   For all other containers, it confines them to a **shared pool** of CPUs that are not exclusively allocated.
-    *   It dynamically updates the shared pool as guaranteed containers are created or removed, ensuring efficient use of resources.
+- **NRI Plugin**: This component integrates with the container runtime via the
+  Node Resource Interface (NRI).
+
+  - For containers with **guaranteed CPUs**, the plugin reads the environment
+    variable injected via CDI and pins the container to its exclusive CPU set.
+  - For all other containers, it confines them to a **shared pool** of CPUs that
+    are not exclusively allocated.
+  - It dynamically updates the shared pool as guaranteed containers are created
+    or removed, ensuring efficient use of resources.
 
 ## Feature Support
 
