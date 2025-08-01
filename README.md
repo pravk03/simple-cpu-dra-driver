@@ -29,17 +29,12 @@ This implements the proposal from the
 
 The driver is deployed as a DaemonSet which contains two core components:
 
-- DRA driver: The DRA driver is responsible for:
-  - Discovering available CPUs on the node and reporting them to the scheduler
-    by creating `ResourceSlice` object.
-  - In the `PrepareResourceClaims` DRA hook, the driver parses allocated CPUs
-    and generates a CDI file for that claim. This information is used by the NRI
-    plugin for actuation.
-- NRI Plugin: In the `CreateContainer` hook, the NRI plugin reads the CPU
-  assignments for the container specified by the DRA driver and uses them to pin
-  containers to their designated cores. It also ensures that any containers not
-  requesting guaranteed cpu's (containers without any resource claims) are
-  confined to the shared pool of available CPUs.
+*   **DRA driver**: This component is responsible for discovering the CPU topology of the node and reporting the available CPUs as allocatable resources to the Kubernetes scheduler by creating `ResourceSlice` objects. When a resource claim is allocated, the driver generates a CDI (Container Device Interface) specification that tells the container runtime to inject an environment variable with the assigned CPU set into the container.
+
+*   **NRI Plugin**: This component integrates with the container runtime via the Node Resource Interface (NRI).
+    *   For containers with **guaranteed CPUs**, the plugin reads the environment variable injected via CDI and pins the container to its exclusive CPU set.
+    *   For all other containers, it confines them to a **shared pool** of CPUs that are not exclusively allocated.
+    *   It dynamically updates the shared pool as guaranteed containers are created or removed, ensuring efficient use of resources.
 
 ## Feature Support
 
@@ -78,7 +73,7 @@ The driver is deployed as a DaemonSet which contains two core components:
   - `kubectl apply -f examples/sample_resource_claim.yaml`
 - Create a Pod: Reference the ResourceClaim in your pod spec to receive the
   allocated CPUs.
-  - `kubectl apply -f examples/sample_pod.yaml`
+  - `kubectl apply -f examples/sample_pod_with_resource_claim.yaml`
 
 ### Example Driver Artifacts
 
@@ -102,79 +97,37 @@ metadata:
   uid: fab29215-023f-422f-ab7e-42c437de7d49
 spec:
   devices:
-  - attributes:
-      coreID:
-        int: 0
-      cpuID:
-        int: 0
-      numaAffinityMask:
-        string: 0x000000ffffff000000ffffff
-      numaNode:
-        int: 0
-    name: cpu0
-  - attributes:
-      coreID:
-        int: 1
-      cpuID:
-        int: 1
-      numaAffinityMask:
-        string: 0x000000ffffff000000ffffff
-      numaNode:
-        int: 0
-    name: cpu1
-  - attributes:
-      coreID:
-        int: 2
-      cpuID:
-        int: 2
-      numaAffinityMask:
-        string: 0x000000ffffff000000ffffff
-      numaNode:
-        int: 0
-    name: cpu2
-  - attributes:
-      coreID:
-        int: 3
-      cpuID:
-        int: 3
-      numaAffinityMask:
-        string: 0x000000ffffff000000ffffff
-      numaNode:
-        int: 0
-    name: cpu3
-    ...
-    ...
-    ...
-  - attributes:
-      coreID:
-        int: 21
-      cpuID:
-        int: 93
-      numaAffinityMask:
-        string: 0xffffff000000ffffff000000
-      numaNode:
-        int: 1
-    name: cpu93
-  - attributes:
-      coreID:
-        int: 22
-      cpuID:
-        int: 94
-      numaAffinityMask:
-        string: 0xffffff000000ffffff000000
-      numaNode:
-        int: 1
-    name: cpu94
-  - attributes:
-      coreID:
-        int: 23
-      cpuID:
-        int: 95
-      numaAffinityMask:
-        string: 0xffffff000000ffffff000000
-      numaNode:
-        int: 1
-    name: cpu95
+  - name: cpudev0
+    basic:
+      attributes:
+        dra.cpu/coreType: p-core
+        dra.cpu/l3CacheID: 0
+        dra.cpu/numaNode: 0
+        dra.cpu/socketID: 0
+  - name: cpudev1
+    basic:
+      attributes:
+        dra.cpu/coreType: p-core
+        dra.cpu/l3CacheID: 0
+        dra.cpu/numaNode: 0
+        dra.cpu/socketID: 0
+  - name: cpudev2
+    basic:
+      attributes:
+        dra.cpu/coreType: p-core
+        dra.cpu/l3CacheID: 0
+        dra.cpu/numaNode: 0
+        dra.cpu/socketID: 0
+...
+...
+...
+  - name: cpudev119
+    basic:
+      attributes:
+        dra.cpu/coreType: p-core
+        dra.cpu/l3CacheID: 1
+        dra.cpu/numaNode: 1
+        dra.cpu/socketID: 1
   driver: dra.cpu
   nodeName: kind-worker
   pool:
@@ -192,7 +145,7 @@ spec:
     dra.cpu.json
     root@kind-worker:/var/run/cdi# cat dra.cpu.json
     {
-    "cdiVersion": "1.0.0",
+    "cdiVersion": "0.8.0",
     "kind": "dra.k8s.io/cpu",
     "devices": [
         {
@@ -211,7 +164,6 @@ spec:
             ]
         }
         }
-    ],
-    "containerEdits": {}
+    ]
     }
 ```
