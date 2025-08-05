@@ -80,10 +80,10 @@ The driver is deployed as a DaemonSet which contains two core components:
   - `kubectl apply -f examples/sample_device_class.yaml`
 - Create a ResourceClaim: This requests a specific number of exclusive CPUs from
   the driver.
-  - `kubectl apply -f examples/sample_cpu_resource_claim.yaml`
+  - `kubectl apply -f examples/sample_cpu_resource_claims.yaml`
 - Create a Pod: Reference the ResourceClaim in your pod spec to receive the
   allocated CPUs.
-  - `kubectl apply -f examples/sample_pod_with_resource_claim.yaml`
+  - `kubectl apply -f examples/sample_pod_with_cpu_resource_claim.yaml`
 
 ### Example Driver Artifacts
 
