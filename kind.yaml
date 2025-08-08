@@ -19,6 +19,8 @@ nodes:
   kubeadmConfigPatches:
   # Enable the corresponding version of the resource.k8s.io API
   - |
+    kind: KubeletConfiguration
+    cpuManagerPolicy: static
     kind: ClusterConfiguration
     scheduler:
         extraArgs:
@@ -28,6 +30,8 @@ nodes:
         extraArgs:
           v: "5"
   - |
+    kind: KubeletConfiguration
+    cpuManagerPolicy: static
     kind: InitConfiguration
     nodeRegistration:
       kubeletExtraArgs:
@@ -36,6 +40,8 @@ nodes:
   image: kindest/node:v1.33.1
   kubeadmConfigPatches:
   - |
+    kind: KubeletConfiguration
+    cpuManagerPolicy: static
     kind: JoinConfiguration
     nodeRegistration:
       kubeletExtraArgs:
@@ -44,6 +50,8 @@ nodes:
   image: kindest/node:v1.33.1
   kubeadmConfigPatches:
   - |
+    kind: KubeletConfiguration
+    cpuManagerPolicy: static
     kind: JoinConfiguration
     nodeRegistration:
       kubeletExtraArgs:

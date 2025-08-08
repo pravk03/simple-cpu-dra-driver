@@ -46,6 +46,7 @@ update: ## runs go mod tidy
 
 # get image name from directory we're building
 IMAGE_NAME=dracputest
+CLUSTER_NAME=cpudratest
 # docker image registry, default to upstream
 REGISTRY?=ghcr.io/pravk03
 # tag based on date-sha
@@ -72,13 +73,13 @@ push-image: image-build ## build and push image
 	docker push ${IMAGE_LATEST}
 
 kind-cluster:  ## create kind cluster
-	kind create cluster --name cpudratest --config kind.yaml
+	kind create cluster --name ${CLUSTER_NAME} --config kind.yaml
 
-load-kind-image: image ## install on cluster
+load-kind-image: image-build ## install on cluster
 	docker tag ${IMAGE} ghcr.io/pravk03/simple-cpu-dra-driver:latest
-	kind load docker-image ghcr.io/pravk03/simple-cpu-dra-driver:latest --name dra
+	kind load docker-image ghcr.io/pravk03/simple-cpu-dra-driver:latest --name ${CLUSTER_NAME}
 	kubectl delete -f install.yaml || true
 	kubectl apply -f install.yaml
 
 delete-kind-cluster: ## delete kind cluster
-	kind delete cluster --name cpudratest
+	kind delete cluster --name ${CLUSTER_NAME}

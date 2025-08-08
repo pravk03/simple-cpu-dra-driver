@@ -131,7 +131,7 @@ spec:
         args:
         - /dracpu
         - --v=4
-        image: ghcr.io/pravk03/dracputest:latest
+        image: ghcr.io/pravk03/simple-cpu-dra-driver:latest
         imagePullPolicy: Always
         resources:
           requests:

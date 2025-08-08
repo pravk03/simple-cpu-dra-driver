@@ -68,16 +68,13 @@ The driver is deployed as a DaemonSet which contains two core components:
 ### Installation
 
 - Create a kind cluster
-  - `kind create cluster --config kind.yaml`
+  - `make kind-cluster`
 - Deploy the driver and all necessary RBAC configurations using the provided
   manifest
-  - `kubectl apply -f install.yaml`
+  - `make load-kind-image`
 
 ### Example Usage
 
-- Create a DeviceClass: This tells Kubernetes how to find the resources provided
-  by this driver.
-  - `kubectl apply -f examples/sample_device_class.yaml`
 - Create a ResourceClaim: This requests a specific number of exclusive CPUs from
   the driver.
   - `kubectl apply -f examples/sample_cpu_resource_claims.yaml`
